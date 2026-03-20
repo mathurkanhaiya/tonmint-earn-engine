@@ -29,6 +29,7 @@ const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
 export const useAuth = () => useContext(AuthContext);
 
+// ✅ Telegram helper
 function getTelegramWebApp() {
   if (typeof window !== "undefined" && (window as any).Telegram?.WebApp) {
     return (window as any).Telegram.WebApp;
@@ -42,16 +43,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // ✅ Fetch or create profile
   const fetchProfile = async (userId: string) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("profiles")
       .select("*")
       .eq("user_id", userId)
       .single();
 
-    // auto create if missing
-    if (!data) {
-      await supabase.from("profiles").insert({ user_id: userId });
+    if (error || !data) {
+      console.warn("Profile not found, creating...");
+
+      await supabase.from("profiles").insert({
+        user_id: userId,
+      });
+
       return fetchProfile(userId);
     }
 
@@ -59,12 +65,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    let initialized = false;
+
     const init = async () => {
+      if (initialized) return;
+      initialized = true;
+
       try {
         const tg = getTelegramWebApp();
 
-        if (!tg || !tg.initData || !tg.initDataUnsafe?.user) {
-          console.error("❌ Not inside Telegram Mini App");
+        if (!tg) {
+          console.error("❌ Telegram SDK not found");
           setIsLoading(false);
           return;
         }
@@ -73,8 +84,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         tg.ready();
         tg.expand();
 
-        const tgUser = tg.initDataUnsafe.user;
+        // ⏳ WAIT FOR TELEGRAM TO INJECT DATA
+        await new Promise((resolve) => setTimeout(resolve, 150));
 
+        const tgUser = tg.initDataUnsafe?.user;
+
+        if (!tgUser) {
+          console.error("❌ No Telegram user (open inside Telegram)");
+          setIsLoading(false);
+          return;
+        }
+
+        console.log("✅ Telegram user:", tgUser);
+
+        // ✅ Set Telegram user
         setTelegramUser({
           id: tgUser.id,
           username: tgUser.username || "",
@@ -82,17 +105,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           photo_url: tgUser.photo_url || "",
         });
 
-        // ✅ reuse session
+        // ✅ Reuse session if exists
         const {
           data: { session },
         } = await supabase.auth.getSession();
 
         if (!session) {
+          console.log("🔐 Logging in via Telegram...");
+
           const { data, error } = await supabase.functions.invoke("telegram-auth", {
             body: { initData: tg.initData },
           });
 
-          if (error) throw error;
+          if (error) {
+            console.error("❌ Edge function error:", error);
+            throw error;
+          }
 
           await supabase.auth.setSession({
             access_token: data.session.access_token,
@@ -100,17 +128,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         }
 
-        // ✅ get user
+        // ✅ Get Supabase user
         const {
           data: { user: currentUser },
         } = await supabase.auth.getUser();
 
-        if (currentUser) {
-          setUser(currentUser);
-          await fetchProfile(currentUser.id);
+        if (!currentUser) {
+          console.error("❌ No Supabase user after auth");
+          setIsLoading(false);
+          return;
         }
+
+        console.log("✅ Supabase user:", currentUser.id);
+
+        setUser(currentUser);
+
+        // ✅ Fetch profile
+        await fetchProfile(currentUser.id);
       } catch (err) {
-        console.error("Auth error:", err);
+        console.error("❌ Auth error:", err);
       } finally {
         setIsLoading(false);
       }
