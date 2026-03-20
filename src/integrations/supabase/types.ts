@@ -14,16 +14,414 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      ad_watches: {
+        Row: {
+          created_at: string
+          id: string
+          provider: string
+          reward_mint: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          provider: string
+          reward_mint?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          provider?: string
+          reward_mint?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      app_settings: {
+        Row: {
+          ad_reward_mint: number
+          farming_cycle_hours: number
+          farming_reward_mint: number
+          id: number
+          max_energy: number
+          min_withdrawal_ton: number
+          referral_l1_percent: number
+          referral_l2_percent: number
+          referral_l3_percent: number
+          referral_usdt: number
+          tap_reward_mint: number
+          updated_at: string
+          withdrawal_fee_percent: number
+        }
+        Insert: {
+          ad_reward_mint?: number
+          farming_cycle_hours?: number
+          farming_reward_mint?: number
+          id: number
+          max_energy?: number
+          min_withdrawal_ton?: number
+          referral_l1_percent?: number
+          referral_l2_percent?: number
+          referral_l3_percent?: number
+          referral_usdt?: number
+          tap_reward_mint?: number
+          updated_at?: string
+          withdrawal_fee_percent?: number
+        }
+        Update: {
+          ad_reward_mint?: number
+          farming_cycle_hours?: number
+          farming_reward_mint?: number
+          id?: number
+          max_energy?: number
+          min_withdrawal_ton?: number
+          referral_l1_percent?: number
+          referral_l2_percent?: number
+          referral_l3_percent?: number
+          referral_usdt?: number
+          tap_reward_mint?: number
+          updated_at?: string
+          withdrawal_fee_percent?: number
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          device_fingerprint: string | null
+          display_name: string | null
+          energy: number
+          farming_claimed_at: string | null
+          farming_started_at: string | null
+          id: string
+          ip_address: string | null
+          max_energy: number
+          mint_balance: number
+          referral_count: number
+          referred_by: string | null
+          telegram_id: number | null
+          telegram_photo_url: string | null
+          telegram_username: string | null
+          ton_balance: number
+          total_ads_watched: number
+          total_taps: number
+          updated_at: string
+          usdt_balance: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_fingerprint?: string | null
+          display_name?: string | null
+          energy?: number
+          farming_claimed_at?: string | null
+          farming_started_at?: string | null
+          id?: string
+          ip_address?: string | null
+          max_energy?: number
+          mint_balance?: number
+          referral_count?: number
+          referred_by?: string | null
+          telegram_id?: number | null
+          telegram_photo_url?: string | null
+          telegram_username?: string | null
+          ton_balance?: number
+          total_ads_watched?: number
+          total_taps?: number
+          updated_at?: string
+          usdt_balance?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_fingerprint?: string | null
+          display_name?: string | null
+          energy?: number
+          farming_claimed_at?: string | null
+          farming_started_at?: string | null
+          id?: string
+          ip_address?: string | null
+          max_energy?: number
+          mint_balance?: number
+          referral_count?: number
+          referred_by?: string | null
+          telegram_id?: number | null
+          telegram_photo_url?: string | null
+          telegram_username?: string | null
+          ton_balance?: number
+          total_ads_watched?: number
+          total_taps?: number
+          updated_at?: string
+          usdt_balance?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_referred_by_fkey"
+            columns: ["referred_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      promo_codes: {
+        Row: {
+          code: string
+          created_at: string
+          current_uses: number
+          id: string
+          is_active: boolean
+          max_uses: number | null
+          reward_mint: number
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          current_uses?: number
+          id?: string
+          is_active?: boolean
+          max_uses?: number | null
+          reward_mint?: number
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          current_uses?: number
+          id?: string
+          is_active?: boolean
+          max_uses?: number | null
+          reward_mint?: number
+        }
+        Relationships: []
+      }
+      promo_redemptions: {
+        Row: {
+          created_at: string
+          id: string
+          promo_code_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          promo_code_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          promo_code_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promo_redemptions_promo_code_id_fkey"
+            columns: ["promo_code_id"]
+            isOneToOne: false
+            referencedRelation: "promo_codes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      referrals: {
+        Row: {
+          created_at: string
+          id: string
+          is_valid: boolean
+          level: number
+          referred_id: string
+          referrer_id: string
+          usdt_rewarded: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_valid?: boolean
+          level?: number
+          referred_id: string
+          referrer_id: string
+          usdt_rewarded?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_valid?: boolean
+          level?: number
+          referred_id?: string
+          referrer_id?: string
+          usdt_rewarded?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referrals_referred_id_fkey"
+            columns: ["referred_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referrals_referrer_id_fkey"
+            columns: ["referrer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tasks: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          reward_mint: number
+          telegram_channel: string | null
+          title: string
+          type: Database["public"]["Enums"]["task_type"]
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          reward_mint?: number
+          telegram_channel?: string | null
+          title: string
+          type?: Database["public"]["Enums"]["task_type"]
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          reward_mint?: number
+          telegram_channel?: string | null
+          title?: string
+          type?: Database["public"]["Enums"]["task_type"]
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_tasks: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          id: string
+          status: Database["public"]["Enums"]["task_status"]
+          task_id: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          status?: Database["public"]["Enums"]["task_status"]
+          task_id: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          status?: Database["public"]["Enums"]["task_status"]
+          task_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_tasks_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      withdrawals: {
+        Row: {
+          admin_note: string | null
+          amount_ton: number
+          created_at: string
+          fee_ton: number
+          id: string
+          net_ton: number
+          processed_at: string | null
+          status: Database["public"]["Enums"]["withdrawal_status"]
+          updated_at: string
+          user_id: string
+          wallet_address: string
+        }
+        Insert: {
+          admin_note?: string | null
+          amount_ton: number
+          created_at?: string
+          fee_ton?: number
+          id?: string
+          net_ton?: number
+          processed_at?: string | null
+          status?: Database["public"]["Enums"]["withdrawal_status"]
+          updated_at?: string
+          user_id: string
+          wallet_address: string
+        }
+        Update: {
+          admin_note?: string | null
+          amount_ton?: number
+          created_at?: string
+          fee_ton?: number
+          id?: string
+          net_ton?: number
+          processed_at?: string | null
+          status?: Database["public"]["Enums"]["withdrawal_status"]
+          updated_at?: string
+          user_id?: string
+          wallet_address?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
+      task_status: "pending" | "completed"
+      task_type: "telegram" | "external"
+      withdrawal_status: "pending" | "approved" | "rejected"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +548,11 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+      task_status: ["pending", "completed"],
+      task_type: ["telegram", "external"],
+      withdrawal_status: ["pending", "approved", "rejected"],
+    },
   },
 } as const
