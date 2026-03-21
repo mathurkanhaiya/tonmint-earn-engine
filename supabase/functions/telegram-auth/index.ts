@@ -3,8 +3,15 @@ import { createHmac } from 'node:crypto';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
+
+function jsonResponse(body: object, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
 
 async function fetchTelegramUserPhoto(botToken: string, telegramId: number): Promise<string> {
   try {
@@ -49,12 +56,10 @@ Deno.serve(async (req) => {
 
   try {
     const { initData } = await req.json();
+    console.log('telegram-auth called, initData length:', initData?.length);
 
     if (!initData) {
-      return new Response(JSON.stringify({ error: 'Missing initData' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'Missing initData' }, 400);
     }
 
     // Parse and validate initData
@@ -69,10 +74,8 @@ Deno.serve(async (req) => {
 
     const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
     if (!botToken) {
-      return new Response(JSON.stringify({ error: 'Bot token not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      console.error('TELEGRAM_BOT_TOKEN not set');
+      return jsonResponse({ error: 'Bot token not configured' }, 500);
     }
 
     const secretKey = createHmac('sha256', 'WebAppData').update(botToken).digest();
@@ -81,31 +84,24 @@ Deno.serve(async (req) => {
       .digest('hex');
 
     if (computedHash !== hash) {
-      return new Response(JSON.stringify({ error: 'Invalid hash' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      console.error('Hash mismatch');
+      return jsonResponse({ error: 'Invalid hash' }, 401);
     }
 
     const authDate = parseInt(params.get('auth_date') || '0');
     if (Date.now() / 1000 - authDate > 86400) {
-      return new Response(JSON.stringify({ error: 'Auth data expired' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'Auth data expired' }, 401);
     }
 
     const userDataStr = params.get('user');
     if (!userDataStr) {
-      return new Response(JSON.stringify({ error: 'No user data' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'No user data' }, 400);
     }
 
     const userData = JSON.parse(userDataStr);
     const telegramId = userData.id;
     const startParam = params.get('start_param') || null;
+    console.log('Authenticating telegram_id:', telegramId, 'start_param:', startParam);
 
     // Fetch fresh data from Telegram Bot API
     const [chatData, photoUrl] = await Promise.all([
@@ -117,6 +113,8 @@ Deno.serve(async (req) => {
     const firstName = chatData?.first_name || userData.first_name || '';
     const lastName = chatData?.last_name || userData.last_name || '';
     const displayName = lastName ? `${firstName} ${lastName}` : firstName;
+
+    console.log('TG API data - username:', username, 'name:', displayName, 'photo:', photoUrl ? 'yes' : 'no');
 
     // Supabase admin client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -134,6 +132,7 @@ Deno.serve(async (req) => {
 
     if (existingProfile) {
       userId = existingProfile.user_id;
+      console.log('Existing user found:', userId);
 
       // Sync latest TG data
       await supabase.from('profiles').update({
@@ -154,13 +153,12 @@ Deno.serve(async (req) => {
       });
 
       if (authError) {
-        return new Response(JSON.stringify({ error: authError.message }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        console.error('Auth user creation failed:', authError.message);
+        return jsonResponse({ error: authError.message }, 500);
       }
 
       userId = authData.user.id;
+      console.log('New user created:', userId);
 
       await supabase.from('profiles').update({
         telegram_id: telegramId,
@@ -169,32 +167,40 @@ Deno.serve(async (req) => {
         display_name: displayName,
       }).eq('user_id', userId);
 
-      // Handle referral
-      if (startParam && startParam !== String(telegramId)) {
-        const { data: referrerProfile } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('telegram_id', parseInt(startParam))
-          .single();
+      // Handle referral - startParam is the referrer's telegram_id
+      if (startParam) {
+        const referrerTelegramId = parseInt(startParam);
+        if (!isNaN(referrerTelegramId) && referrerTelegramId !== telegramId) {
+          console.log('Processing referral from telegram_id:', referrerTelegramId);
 
-        if (referrerProfile) {
-          await supabase.from('profiles').update({
-            referred_by: referrerProfile.id,
-          }).eq('user_id', userId);
-
-          const { data: newProfile } = await supabase
+          const { data: referrerProfile } = await supabase
             .from('profiles')
             .select('id')
-            .eq('user_id', userId)
+            .eq('telegram_id', referrerTelegramId)
             .single();
 
-          if (newProfile) {
-            await supabase.from('referrals').insert({
-              referrer_id: referrerProfile.id,
-              referred_id: newProfile.id,
-              level: 1,
-            });
-            await supabase.rpc('increment_referral_count', { profile_id: referrerProfile.id });
+          if (referrerProfile) {
+            await supabase.from('profiles').update({
+              referred_by: referrerProfile.id,
+            }).eq('user_id', userId);
+
+            const { data: newProfile } = await supabase
+              .from('profiles')
+              .select('id')
+              .eq('user_id', userId)
+              .single();
+
+            if (newProfile) {
+              await supabase.from('referrals').insert({
+                referrer_id: referrerProfile.id,
+                referred_id: newProfile.id,
+                level: 1,
+              });
+              await supabase.rpc('increment_referral_count', { profile_id: referrerProfile.id });
+              console.log('Referral created successfully');
+            }
+          } else {
+            console.log('Referrer not found for telegram_id:', referrerTelegramId);
           }
         }
       }
@@ -205,6 +211,7 @@ Deno.serve(async (req) => {
           user_id: userId,
           role: 'admin',
         });
+        console.log('Admin role assigned');
       }
     }
 
@@ -218,13 +225,13 @@ Deno.serve(async (req) => {
     });
 
     if (signInError) {
-      return new Response(JSON.stringify({ error: signInError.message }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      console.error('Sign in failed:', signInError.message);
+      return jsonResponse({ error: signInError.message }, 500);
     }
 
-    return new Response(JSON.stringify({
+    console.log('Auth complete for telegram_id:', telegramId);
+
+    return jsonResponse({
       session: signInData.session,
       user: {
         id: userId,
@@ -234,16 +241,11 @@ Deno.serve(async (req) => {
         display_name: displayName,
         photo_url: photoUrl,
       },
-    }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: msg }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    console.error('telegram-auth error:', msg);
+    return jsonResponse({ error: msg }, 500);
   }
 });

@@ -416,6 +416,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      increment_referral_count: {
+        Args: { profile_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       app_role: "admin" | "user"
