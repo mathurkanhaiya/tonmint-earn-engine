@@ -1,20 +1,28 @@
 import { useState } from "react";
 import { useUserStore } from "@/lib/store";
+import { useAuth } from "@/contexts/AuthContext";
 import { REFERRAL_LEVELS, TOKEN_ICONS } from "@/lib/constants";
 import { Copy, Check, Users, TrendingUp } from "lucide-react";
 import BalanceHeader from "@/components/BalanceHeader";
 
 export default function ReferralPage() {
   const { referralCount } = useUserStore();
+  const { profile, telegramUser } = useAuth();
   const [copied, setCopied] = useState(false);
 
-  const referralLink = "https://t.me/OpenTonMintbot/app?startapp=user123";
+  const telegramId = profile?.telegram_id || telegramUser?.id || null;
+  const botUsername = "OpenTonMintbot";
+  const referralLink = telegramId
+    ? `https://t.me/${botUsername}/app?startapp=${telegramId}`
+    : `https://t.me/${botUsername}/app`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(referralLink);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const actualReferralCount = profile?.referral_count ?? referralCount;
 
   return (
     <div className="flex flex-col px-4 pb-24 min-h-screen">
@@ -53,13 +61,13 @@ export default function ReferralPage() {
       <div className="grid grid-cols-2 gap-3 mt-4 max-w-sm mx-auto w-full animate-fade-up" style={{ animationDelay: "100ms" }}>
         <div className="surface-card rounded-xl p-4 text-center">
           <Users className="w-5 h-5 text-mint mx-auto mb-1" />
-          <p className="font-mono text-2xl font-bold">{referralCount}</p>
+          <p className="font-mono text-2xl font-bold">{actualReferralCount}</p>
           <p className="text-[11px] text-muted-foreground">Referrals</p>
         </div>
         <div className="surface-card rounded-xl p-4 text-center">
           <TrendingUp className="w-5 h-5 text-mint mx-auto mb-1" />
           <p className="font-mono text-2xl font-bold">
-            ${(referralCount * 0.02).toFixed(2)}
+            ${(actualReferralCount * 0.02).toFixed(2)}
           </p>
           <p className="text-[11px] text-muted-foreground">USDT Earned</p>
         </div>

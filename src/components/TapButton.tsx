@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef } from "react";
 import { useUserStore } from "@/lib/store";
+import { useAuth } from "@/contexts/AuthContext";
 import { TOKEN_ICONS } from "@/lib/constants";
+import { syncTap } from "@/lib/supabaseSync";
 
 interface FloatingMint {
   id: number;
@@ -9,7 +11,8 @@ interface FloatingMint {
 }
 
 export default function TapButton() {
-  const { energy, maxEnergy, tap } = useUserStore();
+  const { energy, maxEnergy, tap, mintBalance, totalTaps } = useUserStore();
+  const { user } = useAuth();
   const [isPressed, setIsPressed] = useState(false);
   const [floats, setFloats] = useState<FloatingMint[]>([]);
   const nextId = useRef(0);
@@ -19,10 +22,14 @@ export default function TapButton() {
       if (energy <= 0) return;
 
       tap();
+
+      if (user?.id) {
+        syncTap(user.id, mintBalance + 1, energy - 1, totalTaps + 1);
+      }
+
       setIsPressed(true);
       setTimeout(() => setIsPressed(false), 150);
 
-      // Get tap position for floating effect
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
       let clientX: number, clientY: number;
       if ("touches" in e) {
@@ -42,21 +49,18 @@ export default function TapButton() {
         setFloats((prev) => prev.filter((f) => f.id !== id));
       }, 800);
     },
-    [energy, tap]
+    [energy, tap, mintBalance, totalTaps, user]
   );
 
   const energyPercent = (energy / maxEnergy) * 100;
 
   return (
     <div className="flex flex-col items-center gap-4 animate-fade-up" style={{ animationDelay: "100ms" }}>
-      {/* Tap area */}
       <div className="relative">
-        {/* Pulse ring */}
         {isPressed && (
           <div className="absolute inset-0 rounded-full border-2 border-mint animate-pulse-ring" />
         )}
 
-        {/* Main button */}
         <button
           onMouseDown={handleTap}
           onTouchStart={handleTap}
@@ -82,7 +86,6 @@ export default function TapButton() {
           />
         </button>
 
-        {/* Floating +1 animations */}
         {floats.map((f) => (
           <div
             key={f.id}
@@ -94,7 +97,6 @@ export default function TapButton() {
         ))}
       </div>
 
-      {/* Energy bar */}
       <div className="w-48 flex flex-col items-center gap-1.5">
         <div className="flex items-center justify-between w-full text-xs">
           <span className="text-muted-foreground">Energy</span>

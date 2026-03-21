@@ -1,6 +1,19 @@
 import { create } from 'zustand';
 import { MAX_ENERGY, TAP_REWARD, FARMING_REWARD, FARMING_CYCLE_MS } from './constants';
 
+interface Profile {
+  mint_balance: number;
+  usdt_balance: number;
+  ton_balance: number;
+  energy: number;
+  max_energy: number;
+  total_taps: number;
+  total_ads_watched: number;
+  farming_started_at: string | null;
+  farming_claimed_at: string | null;
+  referral_count: number;
+}
+
 interface UserState {
   mintBalance: number;
   usdtBalance: number;
@@ -12,7 +25,9 @@ interface UserState {
   totalTaps: number;
   totalAdsWatched: number;
   referralCount: number;
+  isInitialized: boolean;
 
+  initFromProfile: (profile: Profile) => void;
   tap: () => void;
   watchAd: (reward: number) => void;
   startFarming: () => void;
@@ -32,6 +47,27 @@ export const useUserStore = create<UserState>((set, get) => ({
   totalTaps: 0,
   totalAdsWatched: 0,
   referralCount: 0,
+  isInitialized: false,
+
+  initFromProfile: (profile: Profile) => {
+    set({
+      mintBalance: Number(profile.mint_balance) || 0,
+      usdtBalance: Number(profile.usdt_balance) || 0,
+      tonBalance: Number(profile.ton_balance) || 0,
+      energy: profile.energy ?? MAX_ENERGY,
+      maxEnergy: profile.max_energy ?? MAX_ENERGY,
+      totalTaps: profile.total_taps || 0,
+      totalAdsWatched: profile.total_ads_watched || 0,
+      referralCount: profile.referral_count || 0,
+      farmingStartedAt: profile.farming_started_at
+        ? new Date(profile.farming_started_at).getTime()
+        : null,
+      farmingClaimedAt: profile.farming_claimed_at
+        ? new Date(profile.farming_claimed_at).getTime()
+        : null,
+      isInitialized: true,
+    });
+  },
 
   tap: () => {
     const state = get();

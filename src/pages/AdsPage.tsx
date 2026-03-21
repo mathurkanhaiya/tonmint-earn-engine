@@ -1,20 +1,32 @@
 import { useState } from "react";
 import { useUserStore } from "@/lib/store";
+import { useAuth } from "@/contexts/AuthContext";
 import { AD_PROVIDERS, TOKEN_ICONS } from "@/lib/constants";
+import { syncWatchAd } from "@/lib/supabaseSync";
 import { Eye, Gift, ArrowRight } from "lucide-react";
 import BalanceHeader from "@/components/BalanceHeader";
 
 export default function AdsPage() {
-  const { watchAd, addMint } = useUserStore();
+  const { watchAd, addMint, mintBalance, energy, maxEnergy, totalAdsWatched } = useUserStore();
+  const { user } = useAuth();
   const [watchedAds, setWatchedAds] = useState<Set<string>>(new Set());
   const [promoCode, setPromoCode] = useState("");
   const [promoStatus, setPromoStatus] = useState<"idle" | "success" | "error">("idle");
 
   const handleWatchAd = (providerId: string, reward: number) => {
-    // Simulate ad watching
     setTimeout(() => {
       watchAd(reward);
       setWatchedAds((prev) => new Set(prev).add(providerId));
+      if (user?.id) {
+        syncWatchAd(
+          user.id,
+          providerId,
+          reward,
+          mintBalance + reward,
+          Math.min(energy + 5, maxEnergy),
+          totalAdsWatched + 1
+        );
+      }
     }, 500);
   };
 
@@ -44,7 +56,6 @@ export default function AdsPage() {
         Watch ads to earn $MINT and refill energy
       </p>
 
-      {/* Ad providers */}
       <div className="space-y-3 max-w-sm mx-auto w-full">
         {AD_PROVIDERS.map((provider, i) => (
           <div
@@ -63,7 +74,8 @@ export default function AdsPage() {
             </div>
             <button
               onClick={() => handleWatchAd(provider.id, provider.reward)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-mint text-primary-foreground font-semibold text-xs transition-all duration-200 active:scale-95"
+              disabled={watchedAds.has(provider.id)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-mint text-primary-foreground font-semibold text-xs transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span>+{provider.reward}</span>
               <img src={TOKEN_ICONS.MINT} alt="" className="w-4 h-4" />
@@ -72,7 +84,6 @@ export default function AdsPage() {
         ))}
       </div>
 
-      {/* Promo code section */}
       <div
         className="surface-card rounded-xl p-4 mt-6 max-w-sm mx-auto w-full animate-fade-up"
         style={{ animationDelay: "300ms" }}

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useUserStore } from '@/lib/store';
 import type { Session, User } from '@supabase/supabase-js';
 
 interface TelegramUser {
@@ -60,7 +61,6 @@ export const useAuth = () => useContext(AuthContext);
 function getTelegramWebApp() {
   if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp) {
     const wa = (window as any).Telegram.WebApp;
-    // Check that we're actually inside TG, not just the script loaded
     if (wa.initData && wa.initData.length > 0) {
       return wa;
     }
@@ -77,6 +77,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
+  const initFromProfile = useUserStore((s) => s.initFromProfile);
+
   const tgWebApp = getTelegramWebApp();
   const isTelegramEnv = !!tgWebApp;
 
@@ -86,7 +88,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .select('*')
       .eq('user_id', userId)
       .single();
-    if (data) setProfile(data as Profile);
+    if (data) {
+      setProfile(data as Profile);
+      initFromProfile(data as Profile);
+    }
   };
 
   const checkAdmin = async (userId: string) => {
@@ -104,14 +109,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // Block non-Telegram environments immediately
     if (!isTelegramEnv) {
       setAuthError('This app can only be used inside Telegram.');
       setIsLoading(false);
       return;
     }
 
-    // Expand TG WebApp
     tgWebApp.expand();
     tgWebApp.ready();
 

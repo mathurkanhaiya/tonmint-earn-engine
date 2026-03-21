@@ -1,10 +1,13 @@
 import { useState, useEffect } from "react";
 import { useUserStore } from "@/lib/store";
+import { useAuth } from "@/contexts/AuthContext";
 import { FARMING_CYCLE_MS, FARMING_REWARD } from "@/lib/constants";
+import { syncStartFarming, syncClaimFarming } from "@/lib/supabaseSync";
 import { Sprout, Check } from "lucide-react";
 
 export default function FarmingCard() {
-  const { farmingStartedAt, startFarming, claimFarming } = useUserStore();
+  const { farmingStartedAt, startFarming, claimFarming, mintBalance } = useUserStore();
+  const { user } = useAuth();
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -24,6 +27,16 @@ export default function FarmingCard() {
   const minutes = Math.max(0, Math.floor((remaining % 3600000) / 60000));
   const seconds = Math.max(0, Math.floor((remaining % 60000) / 1000));
 
+  const handleStartFarming = () => {
+    startFarming();
+    if (user?.id) syncStartFarming(user.id);
+  };
+
+  const handleClaimFarming = () => {
+    claimFarming();
+    if (user?.id) syncClaimFarming(user.id, mintBalance + FARMING_REWARD);
+  };
+
   return (
     <div className="surface-card rounded-xl p-4 animate-fade-up" style={{ animationDelay: "200ms" }}>
       <div className="flex items-center justify-between mb-3">
@@ -36,7 +49,6 @@ export default function FarmingCard() {
         </span>
       </div>
 
-      {/* Progress bar */}
       <div className="w-full h-1.5 rounded-full bg-muted mb-3 overflow-hidden">
         <div
           className="h-full rounded-full transition-all duration-500"
@@ -51,7 +63,7 @@ export default function FarmingCard() {
 
       {!farmingStartedAt && (
         <button
-          onClick={startFarming}
+          onClick={handleStartFarming}
           className="w-full py-2.5 rounded-lg bg-mint text-primary-foreground font-semibold text-sm transition-all duration-200 active:scale-[0.97] hover:brightness-110"
         >
           Start Farming
@@ -72,7 +84,7 @@ export default function FarmingCard() {
 
       {isComplete && (
         <button
-          onClick={claimFarming}
+          onClick={handleClaimFarming}
           className="w-full py-2.5 rounded-lg bg-mint text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.97] glow-mint"
         >
           <Check className="w-4 h-4" />
