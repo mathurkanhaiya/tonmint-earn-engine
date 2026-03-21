@@ -36,6 +36,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isLoading: boolean;
   isAuthenticated: boolean;
+  authError: string | null;
   refreshProfile: () => Promise<void>;
 }
 
@@ -47,12 +48,12 @@ const AuthContext = createContext<AuthContextType>({
   isAdmin: false,
   isLoading: true,
   isAuthenticated: false,
+  authError: null,
   refreshProfile: async () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
 
-// Check if running inside Telegram WebApp
 function getTelegramWebApp() {
   if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp) {
     return (window as any).Telegram.WebApp;
@@ -67,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase
@@ -74,10 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .select('*')
       .eq('user_id', userId)
       .single();
-    
-    if (data) {
-      setProfile(data as Profile);
-    }
+    if (data) setProfile(data as Profile);
   };
 
   const checkAdmin = async (userId: string) => {
@@ -87,25 +86,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq('user_id', userId)
       .eq('role', 'admin')
       .single();
-    
     setIsAdmin(!!data);
   };
 
   const refreshProfile = async () => {
-    if (user?.id) {
-      await fetchProfile(user.id);
-    }
+    if (user?.id) await fetchProfile(user.id);
   };
 
   useEffect(() => {
-    // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, newSession) => {
+      async (_event, newSession) => {
         setSession(newSession);
         setUser(newSession?.user ?? null);
-
         if (newSession?.user) {
-          // Use setTimeout to avoid potential deadlocks
           setTimeout(async () => {
             await fetchProfile(newSession.user.id);
             await checkAdmin(newSession.user.id);
@@ -117,21 +110,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    // Then check for existing session
     supabase.auth.getSession().then(({ data: { session: existingSession } }) => {
       if (existingSession) {
         setSession(existingSession);
         setUser(existingSession.user);
         fetchProfile(existingSession.user.id);
         checkAdmin(existingSession.user.id);
-      }
-
-      // Try Telegram WebApp auth
-      const tgWebApp = getTelegramWebApp();
-      if (tgWebApp?.initData && !existingSession) {
-        authenticateWithTelegram(tgWebApp.initData, tgWebApp.initDataUnsafe?.user);
-      } else {
         setIsLoading(false);
+      } else {
+        // Only Telegram Web App auth — no fallback
+        const tgWebApp = getTelegramWebApp();
+        if (tgWebApp?.initData) {
+          authenticateWithTelegram(tgWebApp.initData, tgWebApp.initDataUnsafe?.user);
+        } else {
+          setAuthError('Please open this app inside Telegram.');
+          setIsLoading(false);
+        }
       }
     });
 
@@ -163,6 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (err) {
       console.error('Telegram auth failed:', err);
+      setAuthError('Authentication failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -171,12 +166,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
-        session,
-        user,
-        profile,
-        telegramUser,
-        isAdmin,
-        isLoading,
+        session, user, profile, telegramUser,
+        isAdmin, isLoading, authError,
         isAuthenticated: !!session,
         refreshProfile,
       }}
