@@ -5,7 +5,6 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import BottomNav from "@/components/BottomNav";
-import DevLogin from "@/components/DevLogin";
 import HomePage from "./pages/HomePage";
 import AdsPage from "./pages/AdsPage";
 import TasksPage from "./pages/TasksPage";
@@ -17,7 +16,7 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 function AppRoutes() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, authError } = useAuth();
 
   if (isLoading) {
     return (
@@ -31,7 +30,26 @@ function AppRoutes() {
   }
 
   if (!isAuthenticated) {
-    return <DevLogin />;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="text-center space-y-4">
+          <h1 className="text-xl font-bold">
+            Ton<span className="text-mint">Mint</span>
+          </h1>
+          <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+            {authError || 'Please open this app inside Telegram to continue.'}
+          </p>
+          <a
+            href="https://t.me/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block px-5 py-2.5 rounded-lg bg-mint text-primary-foreground font-semibold text-sm"
+          >
+            Open Telegram
+          </a>
+        </div>
+      </div>
+    );
   }
 
   return (
