@@ -6,7 +6,7 @@ import { Copy, Check, Users, TrendingUp } from "lucide-react";
 import BalanceHeader from "@/components/BalanceHeader";
 
 export default function ReferralPage() {
-  const { referralCount } = useUserStore();
+  const { referralCount, isInitialized } = useUserStore();
   const { profile, telegramUser } = useAuth();
   const [copied, setCopied] = useState(false);
 
@@ -61,14 +61,22 @@ export default function ReferralPage() {
       <div className="grid grid-cols-2 gap-3 mt-4 max-w-sm mx-auto w-full animate-fade-up" style={{ animationDelay: "100ms" }}>
         <div className="surface-card rounded-xl p-4 text-center">
           <Users className="w-5 h-5 text-mint mx-auto mb-1" />
-          <p className="font-mono text-2xl font-bold">{actualReferralCount}</p>
+          {isInitialized ? (
+            <p className="font-mono text-2xl font-bold">{actualReferralCount}</p>
+          ) : (
+            <div className="h-8 w-12 mx-auto rounded bg-muted animate-pulse my-0.5" />
+          )}
           <p className="text-[11px] text-muted-foreground">Referrals</p>
         </div>
         <div className="surface-card rounded-xl p-4 text-center">
           <TrendingUp className="w-5 h-5 text-mint mx-auto mb-1" />
-          <p className="font-mono text-2xl font-bold">
-            ${(actualReferralCount * 0.02).toFixed(2)}
-          </p>
+          {isInitialized ? (
+            <p className="font-mono text-2xl font-bold">
+              ${(actualReferralCount * 0.02).toFixed(2)}
+            </p>
+          ) : (
+            <div className="h-8 w-16 mx-auto rounded bg-muted animate-pulse my-0.5" />
+          )}
           <p className="text-[11px] text-muted-foreground">USDT Earned</p>
         </div>
       </div>

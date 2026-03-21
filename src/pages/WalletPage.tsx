@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useUserStore } from "@/lib/store";
 import { useAuth } from "@/contexts/AuthContext";
+
 import { TOKEN_ICONS, WITHDRAWAL_MIN_TON, WITHDRAWAL_FEE_PERCENT } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
 import { ArrowRightLeft, ArrowUpRight, User, Shield } from "lucide-react";
 
 export default function WalletPage() {
-  const { mintBalance, usdtBalance, tonBalance } = useUserStore();
+  const { mintBalance, usdtBalance, tonBalance, isInitialized } = useUserStore();
   const { user, profile, telegramUser } = useAuth();
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -95,9 +96,13 @@ export default function WalletPage() {
               <img src={bal.icon} alt={bal.name} className="w-8 h-8" />
               <span className="font-semibold text-sm">{bal.name}</span>
             </div>
-            <span className="font-mono text-lg font-bold">
-              {bal.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })}
-            </span>
+            {isInitialized ? (
+              <span className="font-mono text-lg font-bold">
+                {bal.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+              </span>
+            ) : (
+              <span className="w-20 h-6 rounded bg-muted animate-pulse inline-block" />
+            )}
           </div>
         ))}
       </div>
@@ -108,15 +113,19 @@ export default function WalletPage() {
           <ArrowRightLeft className="w-4 h-4 text-mint" />
           <span className="font-semibold text-sm">Conversion</span>
         </div>
-        <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted">
-          <span className="text-xs text-muted-foreground">
-            {mintBalance.toLocaleString()} $MINT
-          </span>
-          <span className="text-xs text-mint">→</span>
-          <span className="font-mono text-sm font-medium">
-            {mintToTon.toFixed(4)} TON
-          </span>
-        </div>
+        {isInitialized ? (
+          <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted">
+            <span className="text-xs text-muted-foreground">
+              {mintBalance.toLocaleString()} $MINT
+            </span>
+            <span className="text-xs text-mint">→</span>
+            <span className="font-mono text-sm font-medium">
+              {mintToTon.toFixed(4)} TON
+            </span>
+          </div>
+        ) : (
+          <div className="h-9 rounded-lg bg-muted animate-pulse" />
+        )}
       </div>
 
       {withdrawStatus === "success" && (

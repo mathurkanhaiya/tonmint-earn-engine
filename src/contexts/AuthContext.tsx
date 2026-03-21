@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useUserStore } from '@/lib/store';
+import { loadProfileCache, saveProfileCache } from '@/lib/profileCache';
 import type { Session, User } from '@supabase/supabase-js';
 
 interface TelegramUser {
@@ -82,6 +83,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const tgWebApp = getTelegramWebApp();
   const isTelegramEnv = !!tgWebApp;
 
+  // Load cached profile instantly to prevent zero-flash
+  useEffect(() => {
+    const cached = loadProfileCache();
+    if (cached) {
+      initFromProfile(cached as Profile);
+    }
+  }, []);
+
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase
       .from('profiles')
@@ -91,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data) {
       setProfile(data as Profile);
       initFromProfile(data as Profile);
+      saveProfileCache(data as Profile);
     }
   };
 
@@ -134,19 +144,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
+    let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+
     supabase.auth.getSession().then(({ data: { session: existingSession } }) => {
       if (existingSession) {
         setSession(existingSession);
         setUser(existingSession.user);
+        // Fetch fresh data in background — cache already populated the store instantly
         fetchProfile(existingSession.user.id);
         checkAdmin(existingSession.user.id);
         setIsLoading(false);
+
+        // Subscribe to realtime profile changes
+        realtimeChannel = supabase
+          .channel(`profile:${existingSession.user.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'profiles',
+              filter: `user_id=eq.${existingSession.user.id}`,
+            },
+            (payload) => {
+              const updated = payload.new as Profile;
+              setProfile(updated);
+              initFromProfile(updated);
+              saveProfileCache(updated);
+            }
+          )
+          .subscribe();
       } else {
         authenticateWithTelegram(tgWebApp.initData);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+    };
   }, []);
 
   const authenticateWithTelegram = async (initData: string) => {

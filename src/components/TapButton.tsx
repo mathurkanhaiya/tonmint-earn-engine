@@ -11,7 +11,7 @@ interface FloatingMint {
 }
 
 export default function TapButton() {
-  const { energy, maxEnergy, tap, mintBalance, totalTaps } = useUserStore();
+  const { energy, maxEnergy, tap, mintBalance, totalTaps, isInitialized } = useUserStore();
   const { user } = useAuth();
   const [isPressed, setIsPressed] = useState(false);
   const [floats, setFloats] = useState<FloatingMint[]>([]);
@@ -19,7 +19,7 @@ export default function TapButton() {
 
   const handleTap = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
-      if (energy <= 0) return;
+      if (energy <= 0 || !isInitialized) return;
 
       tap();
 
@@ -49,10 +49,10 @@ export default function TapButton() {
         setFloats((prev) => prev.filter((f) => f.id !== id));
       }, 800);
     },
-    [energy, tap, mintBalance, totalTaps, user]
+    [energy, tap, mintBalance, totalTaps, user, isInitialized]
   );
 
-  const energyPercent = (energy / maxEnergy) * 100;
+  const energyPercent = isInitialized ? (energy / maxEnergy) * 100 : 0;
 
   return (
     <div className="flex flex-col items-center gap-4 animate-fade-up" style={{ animationDelay: "100ms" }}>
@@ -64,11 +64,11 @@ export default function TapButton() {
         <button
           onMouseDown={handleTap}
           onTouchStart={handleTap}
-          disabled={energy <= 0}
+          disabled={energy <= 0 || !isInitialized}
           className={`relative w-40 h-40 rounded-full flex items-center justify-center transition-transform duration-150 ${
             isPressed ? "scale-95" : "scale-100"
           } ${
-            energy > 0
+            energy > 0 && isInitialized
               ? "glow-mint cursor-pointer active:scale-95"
               : "opacity-40 cursor-not-allowed"
           }`}
@@ -97,23 +97,28 @@ export default function TapButton() {
         ))}
       </div>
 
+      {/* Energy bar */}
       <div className="w-48 flex flex-col items-center gap-1.5">
         <div className="flex items-center justify-between w-full text-xs">
           <span className="text-muted-foreground">Energy</span>
-          <span className="font-mono text-mint font-medium">
-            {energy}/{maxEnergy}
-          </span>
+          {isInitialized ? (
+            <span className="font-mono text-mint font-medium">{energy}/{maxEnergy}</span>
+          ) : (
+            <span className="w-12 h-3.5 rounded bg-muted animate-pulse inline-block" />
+          )}
         </div>
         <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
           <div
-            className="h-full rounded-full transition-all duration-300"
+            className="h-full rounded-full transition-all duration-500"
             style={{
               width: `${energyPercent}%`,
-              background: `linear-gradient(90deg, hsl(156 100% 40%), hsl(156 100% 50%))`,
+              background: isInitialized
+                ? `linear-gradient(90deg, hsl(156 100% 40%), hsl(156 100% 50%))`
+                : undefined,
             }}
           />
         </div>
-        {energy === 0 && (
+        {isInitialized && energy === 0 && (
           <p className="text-[11px] text-destructive font-medium">
             Watch ads to refill energy
           </p>
