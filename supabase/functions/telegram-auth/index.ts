@@ -6,6 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
+const ADMIN_TELEGRAM_IDS = [2139807311];
+
 function jsonResponse(body: object, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -204,15 +206,15 @@ Deno.serve(async (req) => {
           }
         }
       }
+    }
 
-      // Admin check
-      if (telegramId === 2139807311) {
-        await supabase.from('user_roles').insert({
-          user_id: userId,
-          role: 'admin',
-        });
-        console.log('Admin role assigned');
-      }
+    // Always ensure admin role is set for admin Telegram IDs (runs for both new and existing users)
+    if (ADMIN_TELEGRAM_IDS.includes(telegramId)) {
+      await supabase.from('user_roles').upsert(
+        { user_id: userId, role: 'admin' },
+        { onConflict: 'user_id,role' }
+      );
+      console.log('Admin role ensured for telegram_id:', telegramId);
     }
 
     // Sign in
