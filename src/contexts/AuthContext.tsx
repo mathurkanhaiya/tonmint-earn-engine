@@ -6,6 +6,7 @@ interface TelegramUser {
   id: number;
   username: string;
   first_name: string;
+  display_name: string;
   photo_url: string;
 }
 
@@ -36,6 +37,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isTelegramEnv: boolean;
   authError: string | null;
   refreshProfile: () => Promise<void>;
 }
@@ -48,6 +50,7 @@ const AuthContext = createContext<AuthContextType>({
   isAdmin: false,
   isLoading: true,
   isAuthenticated: false,
+  isTelegramEnv: false,
   authError: null,
   refreshProfile: async () => {},
 });
@@ -56,7 +59,11 @@ export const useAuth = () => useContext(AuthContext);
 
 function getTelegramWebApp() {
   if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp) {
-    return (window as any).Telegram.WebApp;
+    const wa = (window as any).Telegram.WebApp;
+    // Check that we're actually inside TG, not just the script loaded
+    if (wa.initData && wa.initData.length > 0) {
+      return wa;
+    }
   }
   return null;
 }
@@ -69,6 +76,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+
+  const tgWebApp = getTelegramWebApp();
+  const isTelegramEnv = !!tgWebApp;
 
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase
@@ -94,6 +104,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    // Block non-Telegram environments immediately
+    if (!isTelegramEnv) {
+      setAuthError('This app can only be used inside Telegram.');
+      setIsLoading(false);
+      return;
+    }
+
+    // Expand TG WebApp
+    tgWebApp.expand();
+    tgWebApp.ready();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, newSession) => {
         setSession(newSession);
@@ -118,36 +139,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         checkAdmin(existingSession.user.id);
         setIsLoading(false);
       } else {
-        // Only Telegram Web App auth — no fallback
-        const tgWebApp = getTelegramWebApp();
-        if (tgWebApp?.initData) {
-          authenticateWithTelegram(tgWebApp.initData, tgWebApp.initDataUnsafe?.user);
-        } else {
-          setAuthError('Please open this app inside Telegram.');
-          setIsLoading(false);
-        }
+        authenticateWithTelegram(tgWebApp.initData);
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const authenticateWithTelegram = async (initData: string, tgUser: any) => {
+  const authenticateWithTelegram = async (initData: string) => {
     try {
-      if (tgUser) {
-        setTelegramUser({
-          id: tgUser.id,
-          username: tgUser.username || '',
-          first_name: tgUser.first_name || '',
-          photo_url: tgUser.photo_url || '',
-        });
-      }
-
       const { data, error } = await supabase.functions.invoke('telegram-auth', {
         body: { initData },
       });
 
       if (error) throw error;
+
+      if (data?.user) {
+        setTelegramUser({
+          id: data.user.telegram_id,
+          username: data.user.username || '',
+          first_name: data.user.first_name || '',
+          display_name: data.user.display_name || '',
+          photo_url: data.user.photo_url || '',
+        });
+      }
 
       if (data?.session) {
         await supabase.auth.setSession({
@@ -157,7 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (err) {
       console.error('Telegram auth failed:', err);
-      setAuthError('Authentication failed. Please try again.');
+      setAuthError('Authentication failed. Please restart the app.');
     } finally {
       setIsLoading(false);
     }
@@ -167,7 +182,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         session, user, profile, telegramUser,
-        isAdmin, isLoading, authError,
+        isAdmin, isLoading, authError, isTelegramEnv,
         isAuthenticated: !!session,
         refreshProfile,
       }}
