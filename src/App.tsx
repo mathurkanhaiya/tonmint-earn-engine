@@ -16,7 +16,7 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 function AppRoutes() {
-  const { isAuthenticated, isLoading, authError } = useAuth();
+  const { isAuthenticated, isLoading, authError, isTelegramEnv } = useAuth();
 
   if (isLoading) {
     return (
@@ -29,24 +29,19 @@ function AppRoutes() {
     );
   }
 
-  if (!isAuthenticated) {
+  if (!isTelegramEnv || !isAuthenticated) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="text-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-mint/10 flex items-center justify-center mx-auto">
+            <span className="text-3xl">🤖</span>
+          </div>
           <h1 className="text-xl font-bold">
             Ton<span className="text-mint">Mint</span>
           </h1>
           <p className="text-sm text-muted-foreground max-w-xs mx-auto">
-            {authError || 'Please open this app inside Telegram to continue.'}
+            {authError || 'This app is only available as a Telegram Mini App. Please open it inside Telegram.'}
           </p>
-          <a
-            href="https://t.me/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block px-5 py-2.5 rounded-lg bg-mint text-primary-foreground font-semibold text-sm"
-          >
-            Open Telegram
-          </a>
         </div>
       </div>
     );

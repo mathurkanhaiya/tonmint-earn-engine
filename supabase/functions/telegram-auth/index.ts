@@ -6,6 +6,42 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+async function fetchTelegramUserPhoto(botToken: string, telegramId: number): Promise<string> {
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${botToken}/getUserProfilePhotos?user_id=${telegramId}&limit=1`
+    );
+    const data = await res.json();
+    if (!data.ok || data.result.total_count === 0) return '';
+
+    const fileId = data.result.photos[0][2]?.file_id || data.result.photos[0][0]?.file_id;
+    if (!fileId) return '';
+
+    const fileRes = await fetch(
+      `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`
+    );
+    const fileData = await fileRes.json();
+    if (!fileData.ok) return '';
+
+    return `https://api.telegram.org/file/bot${botToken}/${fileData.result.file_path}`;
+  } catch {
+    return '';
+  }
+}
+
+async function fetchTelegramChat(botToken: string, telegramId: number) {
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${botToken}/getChat?chat_id=${telegramId}`
+    );
+    const data = await res.json();
+    if (!data.ok) return null;
+    return data.result;
+  } catch {
+    return null;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -21,18 +57,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Parse initData
+    // Parse and validate initData
     const params = new URLSearchParams(initData);
     const hash = params.get('hash');
     params.delete('hash');
 
-    // Sort and create data check string
     const dataCheckArr: string[] = [];
     params.sort();
     params.forEach((val, key) => dataCheckArr.push(`${key}=${val}`));
     const dataCheckString = dataCheckArr.join('\n');
 
-    // Validate hash using bot token
     const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
     if (!botToken) {
       return new Response(JSON.stringify({ error: 'Bot token not configured' }), {
@@ -53,7 +87,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check auth_date is not too old (allow 1 day)
     const authDate = parseInt(params.get('auth_date') || '0');
     if (Date.now() / 1000 - authDate > 86400) {
       return new Response(JSON.stringify({ error: 'Auth data expired' }), {
@@ -62,7 +95,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Extract user data
     const userDataStr = params.get('user');
     if (!userDataStr) {
       return new Response(JSON.stringify({ error: 'No user data' }), {
@@ -73,17 +105,25 @@ Deno.serve(async (req) => {
 
     const userData = JSON.parse(userDataStr);
     const telegramId = userData.id;
-    const username = userData.username || '';
-    const firstName = userData.first_name || '';
-    const photoUrl = userData.photo_url || '';
     const startParam = params.get('start_param') || null;
 
-    // Create Supabase admin client
+    // Fetch fresh data from Telegram Bot API
+    const [chatData, photoUrl] = await Promise.all([
+      fetchTelegramChat(botToken, telegramId),
+      fetchTelegramUserPhoto(botToken, telegramId),
+    ]);
+
+    const username = chatData?.username || userData.username || '';
+    const firstName = chatData?.first_name || userData.first_name || '';
+    const lastName = chatData?.last_name || userData.last_name || '';
+    const displayName = lastName ? `${firstName} ${lastName}` : firstName;
+
+    // Supabase admin client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Check if user exists by telegram_id
+    // Check if user exists
     const { data: existingProfile } = await supabase
       .from('profiles')
       .select('user_id')
@@ -95,11 +135,11 @@ Deno.serve(async (req) => {
     if (existingProfile) {
       userId = existingProfile.user_id;
 
-      // Update profile info
+      // Sync latest TG data
       await supabase.from('profiles').update({
         telegram_username: username,
         telegram_photo_url: photoUrl,
-        display_name: firstName,
+        display_name: displayName,
       }).eq('user_id', userId);
     } else {
       // Create new auth user
@@ -122,12 +162,11 @@ Deno.serve(async (req) => {
 
       userId = authData.user.id;
 
-      // Update profile with telegram data
       await supabase.from('profiles').update({
         telegram_id: telegramId,
         telegram_username: username,
         telegram_photo_url: photoUrl,
-        display_name: firstName,
+        display_name: displayName,
       }).eq('user_id', userId);
 
       // Handle referral
@@ -155,14 +194,12 @@ Deno.serve(async (req) => {
               referred_id: newProfile.id,
               level: 1,
             });
-
-            // Increment referral count
             await supabase.rpc('increment_referral_count', { profile_id: referrerProfile.id });
           }
         }
       }
 
-      // Check if this is the admin telegram ID
+      // Admin check
       if (telegramId === 2139807311) {
         await supabase.from('user_roles').insert({
           user_id: userId,
@@ -171,7 +208,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Sign in the user to get a session token
+    // Sign in
     const email = `tg_${telegramId}@telegram.user`;
     const password = `tg_${telegramId}_${botToken.slice(0, 10)}`;
 
@@ -194,6 +231,7 @@ Deno.serve(async (req) => {
         telegram_id: telegramId,
         username,
         first_name: firstName,
+        display_name: displayName,
         photo_url: photoUrl,
       },
     }), {
