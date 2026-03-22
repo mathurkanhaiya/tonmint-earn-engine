@@ -8,6 +8,8 @@ const ADMIN_TELEGRAM_IDS = [2139807311];
 
 const DAILY_DROP_REWARDS = [5, 10, 15, 20, 25, 35, 50];
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 async function sendTelegramMessage(botToken, chatId, text) {
   try {
     const res = await fetch(
@@ -60,16 +62,62 @@ async function fetchTelegramChat(botToken, telegramId) {
   }
 }
 
-function getSupabaseClient() {
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !supabaseServiceKey) return null;
-  return { url: supabaseUrl, key: supabaseServiceKey };
+function getSupabaseUrl() {
+  return process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 }
 
-async function logBotNotification(supabase, userId, telegramId, type, message) {
+function getAnonKey() {
+  return process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+}
+
+function getServiceKey() {
+  return process.env.SUPABASE_SERVICE_ROLE_KEY || null;
+}
+
+// Returns an admin (service role) Supabase client if available, null otherwise
+async function getAdminClient() {
+  const url = getSupabaseUrl();
+  const serviceKey = getServiceKey();
+  if (!url || !serviceKey) return null;
+  const { createClient } = await import('@supabase/supabase-js');
+  return createClient(url, serviceKey, { auth: { persistSession: false } });
+}
+
+// Returns a regular anon Supabase client (always available)
+async function getAnonClient() {
+  const url = getSupabaseUrl();
+  const anonKey = getAnonKey();
+  if (!url || !anonKey) throw new Error('Supabase URL/anon key not configured');
+  const { createClient } = await import('@supabase/supabase-js');
+  return createClient(url, anonKey, { auth: { persistSession: false } });
+}
+
+// Returns a Supabase client authenticated as a specific user
+async function getUserClient(accessToken) {
+  const url = getSupabaseUrl();
+  const anonKey = getAnonKey();
+  if (!url || !anonKey) throw new Error('Supabase not configured');
+  const { createClient } = await import('@supabase/supabase-js');
+  const client = createClient(url, anonKey, {
+    auth: { persistSession: false },
+    global: { headers: { Authorization: `Bearer ${accessToken}` } },
+  });
+  return client;
+}
+
+async function safeLogActivity(client, userId, actionType, details) {
   try {
-    await supabase.from('bot_notifications').insert({
+    await client.from('user_activity').insert({
+      user_id: userId,
+      action_type: actionType,
+      details: details || {},
+    });
+  } catch {}
+}
+
+async function safeLogNotification(client, userId, telegramId, type, message) {
+  try {
+    await client.from('bot_notifications').insert({
       user_id: userId,
       telegram_id: telegramId,
       type,
@@ -78,21 +126,13 @@ async function logBotNotification(supabase, userId, telegramId, type, message) {
   } catch {}
 }
 
-async function logUserActivity(supabase, userId, actionType, details) {
-  try {
-    await supabase.from('user_activity').insert({
-      user_id: userId,
-      action_type: actionType,
-      details: details || {},
-    });
-  } catch {}
-}
+// ─── Express App ──────────────────────────────────────────────────────────────
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ─── Telegram Auth ───────────────────────────────────────────────────────────
+// ─── Telegram Auth ────────────────────────────────────────────────────────────
 app.post('/api/telegram-auth', async (req, res) => {
   try {
     const { initData } = req.body;
@@ -110,9 +150,9 @@ app.post('/api/telegram-auth', async (req, res) => {
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     if (!botToken) return res.status(500).json({ error: 'Bot token not configured' });
 
+    // Verify Telegram HMAC signature
     const secretKey = createHmac('sha256', 'WebAppData').update(botToken).digest();
     const computedHash = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
-
     if (computedHash !== hash) return res.status(401).json({ error: 'Invalid hash' });
 
     const authDate = parseInt(params.get('auth_date') || '0');
@@ -136,107 +176,150 @@ app.post('/api/telegram-auth', async (req, res) => {
     const lastName = chatData?.last_name || userData.last_name || '';
     const displayName = lastName ? `${firstName} ${lastName}` : firstName;
 
-    const cfg = getSupabaseClient();
-    if (!cfg) return res.status(500).json({ error: 'Supabase not configured on server' });
+    const email = `tg_${telegramId}@telegram.user`;
+    const password = `tg_${telegramId}_${botToken.slice(0, 10)}`;
 
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(cfg.url, cfg.key);
+    // Use anon client for auth — no service role key needed
+    const anonClient = await getAnonClient();
 
-    const { data: existingProfile } = await supabase
-      .from('profiles')
-      .select('user_id')
-      .eq('telegram_id', telegramId)
-      .single();
+    // Try signing in first (existing user)
+    const { data: signInData, error: signInError } = await anonClient.auth.signInWithPassword({ email, password });
 
+    let session;
     let userId;
     let isNewUser = false;
 
-    if (existingProfile) {
-      userId = existingProfile.user_id;
-      await supabase.from('profiles').update({
-        telegram_username: username,
-        telegram_photo_url: photoUrl,
-        display_name: displayName,
-      }).eq('user_id', userId);
+    if (signInData?.session) {
+      // Existing user signed in successfully
+      session = signInData.session;
+      userId = signInData.user.id;
     } else {
+      // New user — register them
       isNewUser = true;
-      const email = `tg_${telegramId}@telegram.user`;
-      const password = `tg_${telegramId}_${botToken.slice(0, 10)}`;
 
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: { telegram_id: telegramId, username, first_name: firstName },
-      });
+      // Try admin client first (preferred — skips email confirmation)
+      const adminClient = await getAdminClient();
 
-      if (authError) return res.status(500).json({ error: authError.message });
+      if (adminClient) {
+        const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true,
+          user_metadata: { telegram_id: telegramId, username, first_name: firstName },
+        });
+        if (authError) return res.status(500).json({ error: authError.message });
+        userId = authData.user.id;
 
-      userId = authData.user.id;
+        // Sign in immediately after admin creation
+        const { data: newSignIn } = await anonClient.auth.signInWithPassword({ email, password });
+        session = newSignIn?.session;
+      } else {
+        // Fallback: use signUp (works without service role key)
+        const { data: signUpData, error: signUpError } = await anonClient.auth.signUp({
+          email,
+          password,
+          options: { data: { telegram_id: telegramId, username, first_name: firstName } },
+        });
 
-      await supabase.from('profiles').update({
-        telegram_id: telegramId,
-        telegram_username: username,
-        telegram_photo_url: photoUrl,
-        display_name: displayName,
-      }).eq('user_id', userId);
+        if (signUpError) return res.status(500).json({ error: signUpError.message });
 
-      if (startParam) {
-        const referrerTelegramId = parseInt(startParam);
-        if (!isNaN(referrerTelegramId) && referrerTelegramId !== telegramId) {
-          const { data: referrerProfile } = await supabase
-            .from('profiles')
-            .select('id, user_id')
-            .eq('telegram_id', referrerTelegramId)
-            .single();
+        // If email confirmation is required, try signing in anyway
+        if (signUpData?.session) {
+          session = signUpData.session;
+          userId = signUpData.user.id;
+        } else if (signUpData?.user) {
+          // Email confirmation pending — attempt sign in
+          const { data: retrySignIn } = await anonClient.auth.signInWithPassword({ email, password });
+          session = retrySignIn?.session;
+          userId = signUpData.user.id;
+        }
 
-          if (referrerProfile) {
-            await supabase.from('profiles').update({
-              referred_by: referrerProfile.id,
-            }).eq('user_id', userId);
+        if (!session) {
+          return res.status(500).json({
+            error: 'Account created but email confirmation is required in your Supabase project. Please disable email confirmation in Authentication → Settings in your Supabase dashboard.',
+          });
+        }
+      }
+    }
 
-            const { data: newProfile } = await supabase
-              .from('profiles')
-              .select('id')
-              .eq('user_id', userId)
-              .single();
+    if (!session || !userId) {
+      return res.status(500).json({ error: 'Failed to create session' });
+    }
 
-            if (newProfile) {
-              await supabase.from('referrals').insert({
-                referrer_id: referrerProfile.id,
-                referred_id: newProfile.id,
-                level: 1,
-              });
-              await supabase.rpc('increment_referral_count', { profile_id: referrerProfile.id });
-            }
+    // Use user-scoped client for profile operations
+    const userClient = await getUserClient(session.access_token);
+
+    // Update profile details
+    await userClient.from('profiles').update({
+      telegram_id: telegramId,
+      telegram_username: username,
+      telegram_photo_url: photoUrl,
+      display_name: displayName,
+    }).eq('user_id', userId);
+
+    // Handle referral (new users only)
+    if (isNewUser && startParam) {
+      const referrerTelegramId = parseInt(startParam);
+      if (!isNaN(referrerTelegramId) && referrerTelegramId !== telegramId) {
+        const adminClient = await getAdminClient();
+        const queryClient = adminClient || userClient;
+
+        const { data: referrerProfile } = await queryClient
+          .from('profiles')
+          .select('id, user_id, telegram_id')
+          .eq('telegram_id', referrerTelegramId)
+          .single();
+
+        if (referrerProfile) {
+          await userClient.from('profiles').update({
+            referred_by: referrerProfile.id,
+          }).eq('user_id', userId);
+
+          const { data: newProfile } = await userClient.from('profiles').select('id').eq('user_id', userId).single();
+          if (newProfile) {
+            await queryClient.from('referrals').insert({
+              referrer_id: referrerProfile.id,
+              referred_id: newProfile.id,
+              level: 1,
+            }).catch(() => {});
+            await queryClient.rpc('increment_referral_count', { profile_id: referrerProfile.id }).catch(() => {});
+          }
+
+          // Notify referrer
+          const referrerTgId = referrerProfile.telegram_id;
+          if (referrerTgId) {
+            const refMsg = `👥 <b>Referral Reward!</b>\n\n${firstName} joined TonMint using your link!\n🏆 Level 1 commission earned. Keep inviting! 🚀`;
+            sendTelegramMessage(botToken, referrerTgId, refMsg).catch(() => {});
           }
         }
       }
     }
 
+    // Grant admin role
     if (ADMIN_TELEGRAM_IDS.includes(telegramId)) {
-      await supabase.from('user_roles').upsert(
+      await userClient.from('user_roles').upsert(
         { user_id: userId, role: 'admin' },
         { onConflict: 'user_id,role' }
-      );
+      ).catch(() => {});
     }
 
-    const email = `tg_${telegramId}@telegram.user`;
-    const password = `tg_${telegramId}_${botToken.slice(0, 10)}`;
-
-    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-    if (signInError) return res.status(500).json({ error: signInError.message });
-
-    // Send welcome message to new users
+    // Welcome message for new users
     if (isNewUser) {
       const welcomeMsg = `🎉 Welcome to <b>TonMint</b>, ${firstName}!\n\nStart tapping to earn <b>$MINT</b> and withdraw in <b>TON</b>.\n\nTap every day for bonus rewards! 🚀`;
-      await sendTelegramMessage(botToken, telegramId, welcomeMsg);
-      await logBotNotification(supabase, userId, telegramId, 'welcome', welcomeMsg);
+      sendTelegramMessage(botToken, telegramId, welcomeMsg).catch(() => {});
+      safeLogNotification(userClient, userId, telegramId, 'welcome', welcomeMsg);
     }
 
     return res.json({
-      session: signInData.session,
-      user: { id: userId, telegram_id: telegramId, username, first_name: firstName, display_name: displayName, photo_url: photoUrl },
+      session,
+      user: {
+        id: userId,
+        telegram_id: telegramId,
+        username,
+        first_name: firstName,
+        display_name: displayName,
+        photo_url: photoUrl,
+      },
     });
   } catch (error) {
     console.error('telegram-auth error:', error.message);
@@ -244,10 +327,10 @@ app.post('/api/telegram-auth', async (req, res) => {
   }
 });
 
-// ─── Send Bot Notification ───────────────────────────────────────────────────
+// ─── General Bot Notification ─────────────────────────────────────────────────
 app.post('/api/notify', async (req, res) => {
   try {
-    const { userId, telegramId, type, message } = req.body;
+    const { userId, telegramId, type, message, accessToken } = req.body;
     if (!userId || !telegramId || !message) return res.status(400).json({ error: 'Missing params' });
 
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -255,11 +338,9 @@ app.post('/api/notify', async (req, res) => {
 
     const sent = await sendTelegramMessage(botToken, telegramId, message);
 
-    const cfg = getSupabaseClient();
-    if (cfg) {
-      const { createClient } = await import('@supabase/supabase-js');
-      const supabase = createClient(cfg.url, cfg.key);
-      await logBotNotification(supabase, userId, telegramId, type || 'general', message);
+    if (accessToken) {
+      const client = await getUserClient(accessToken).catch(() => null);
+      if (client) safeLogNotification(client, userId, telegramId, type || 'general', message);
     }
 
     return res.json({ sent });
@@ -269,30 +350,27 @@ app.post('/api/notify', async (req, res) => {
   }
 });
 
-// ─── Daily Drop Claim ────────────────────────────────────────────────────────
+// ─── Daily Drop Claim ─────────────────────────────────────────────────────────
 app.post('/api/daily-drop/claim', async (req, res) => {
   try {
     const { userId, accessToken } = req.body;
     if (!userId || !accessToken) return res.status(400).json({ error: 'Missing params' });
 
-    const cfg = getSupabaseClient();
-    if (!cfg) return res.status(500).json({ error: 'Server not configured' });
+    // Use the user's own token — no service role key needed
+    const userClient = await getUserClient(accessToken);
 
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(cfg.url, cfg.key);
-
-    // Verify user token
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(accessToken);
+    // Verify token belongs to this user
+    const { data: { user }, error: authErr } = await userClient.auth.getUser();
     if (authErr || !user || user.id !== userId) return res.status(401).json({ error: 'Unauthorized' });
 
     // Get profile
-    const { data: profile } = await supabase
+    const { data: profile, error: profileErr } = await userClient
       .from('profiles')
       .select('id, telegram_id, display_name, mint_balance, daily_drop_claimed_at, daily_drop_streak')
       .eq('user_id', userId)
       .single();
 
-    if (!profile) return res.status(404).json({ error: 'Profile not found' });
+    if (profileErr || !profile) return res.status(404).json({ error: 'Profile not found' });
 
     // Check if already claimed today
     const now = new Date();
@@ -317,22 +395,21 @@ app.post('/api/daily-drop/claim', async (req, res) => {
     const rewardMint = DAILY_DROP_REWARDS[newStreak - 1];
     const newMintBalance = Number(profile.mint_balance) + rewardMint;
 
-    // Update profile
-    await supabase.from('profiles').update({
+    // Update profile (user-scoped — works with RLS)
+    await userClient.from('profiles').update({
       daily_drop_streak: newStreak,
       daily_drop_claimed_at: now.toISOString(),
       mint_balance: newMintBalance,
     }).eq('user_id', userId);
 
-    // Log drop
-    await supabase.from('daily_drops').insert({
+    // Log drop and activity
+    await userClient.from('daily_drops').insert({
       user_id: userId,
       streak_day: newStreak,
       reward_mint: rewardMint,
-    });
+    }).catch(() => {});
 
-    // Log activity
-    await logUserActivity(supabase, userId, 'daily_drop', { streak_day: newStreak, reward_mint: rewardMint });
+    safeLogActivity(userClient, userId, 'daily_drop', { streak_day: newStreak, reward_mint: rewardMint });
 
     // Send bot notification
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -340,24 +417,19 @@ app.post('/api/daily-drop/claim', async (req, res) => {
     if (botToken && telegramId) {
       const nextDay = newStreak < 7 ? newStreak + 1 : 1;
       const nextReward = DAILY_DROP_REWARDS[nextDay - 1];
-      const msg = `📅 <b>Daily Check-in — Day ${newStreak}!</b>\n\n🎁 Reward: <b>+${rewardMint} MINT</b>\n💎 New Balance: <b>${Math.round(newMintBalance).toLocaleString()} MINT</b>\n🔥 Streak: <b>${newStreak}/7</b>\n\n🚀 Come back tomorrow for <b>${nextReward} MINT</b>! 🔥`;
-      await sendTelegramMessage(botToken, telegramId, msg);
-      await logBotNotification(supabase, userId, telegramId, 'daily_drop', msg);
+      const msg = `📅 <b>Daily Check-in — Day ${newStreak}!</b>\n\n🎁 Reward: <b>+${rewardMint} MINT</b>\n💎 Balance: <b>${Math.round(newMintBalance).toLocaleString()} MINT</b>\n🔥 Streak: <b>${newStreak}/7</b>\n\n🚀 Come back tomorrow for <b>${nextReward} MINT</b>!`;
+      sendTelegramMessage(botToken, telegramId, msg).catch(() => {});
+      safeLogNotification(userClient, userId, telegramId, 'daily_drop', msg);
     }
 
-    return res.json({
-      success: true,
-      streakDay: newStreak,
-      rewardMint,
-      newMintBalance,
-    });
+    return res.json({ success: true, streakDay: newStreak, rewardMint, newMintBalance });
   } catch (error) {
     console.error('daily-drop claim error:', error.message);
     return res.status(500).json({ error: error.message });
   }
 });
 
-// ─── Farming Complete Notification ──────────────────────────────────────────
+// ─── Farming Complete Notification ────────────────────────────────────────────
 app.post('/api/notify/farming-complete', async (req, res) => {
   try {
     const { userId, telegramId } = req.body;
@@ -369,20 +441,13 @@ app.post('/api/notify/farming-complete', async (req, res) => {
     const msg = `🌾 <b>Farming Complete!</b>\n\nYour $MINT is ready to harvest. Open the app and claim your rewards now!`;
     const sent = await sendTelegramMessage(botToken, telegramId, msg);
 
-    const cfg = getSupabaseClient();
-    if (cfg) {
-      const { createClient } = await import('@supabase/supabase-js');
-      const supabase = createClient(cfg.url, cfg.key);
-      await logBotNotification(supabase, userId, telegramId, 'farming_complete', msg);
-    }
-
     return res.json({ sent });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
 });
 
-// ─── Boost Ready Notification ─────────────────────────────────────────────
+// ─── Boost Ready Notification ─────────────────────────────────────────────────
 app.post('/api/notify/boost-ready', async (req, res) => {
   try {
     const { userId, telegramId } = req.body;
@@ -391,90 +456,10 @@ app.post('/api/notify/boost-ready', async (req, res) => {
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     if (!botToken) return res.json({ sent: false });
 
-    const msg = `⚡ <b>Your boost is ready!</b>\n\n10 boosts have been refilled. Open the app and start tapping! 🚀`;
+    const msg = `⚡ <b>Your boosts are ready!</b>\n\n10 boosts have been refilled. Open the app and start tapping! 🚀`;
     const sent = await sendTelegramMessage(botToken, telegramId, msg);
 
-    const cfg = getSupabaseClient();
-    if (cfg) {
-      const { createClient } = await import('@supabase/supabase-js');
-      const supabase = createClient(cfg.url, cfg.key);
-      await logBotNotification(supabase, userId, telegramId, 'boost_ready', msg);
-    }
-
     return res.json({ sent });
-  } catch (error) {
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-// ─── Notify New Task ─────────────────────────────────────────────────────────
-app.post('/api/notify/new-task', async (req, res) => {
-  try {
-    const { taskTitle, taskReward } = req.body;
-    if (!taskTitle) return res.status(400).json({ error: 'Missing taskTitle' });
-
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    if (!botToken) return res.json({ sent: false });
-
-    const cfg = getSupabaseClient();
-    if (!cfg) return res.json({ sent: false });
-
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(cfg.url, cfg.key);
-
-    // Get all users with telegram_id
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('user_id, telegram_id')
-      .not('telegram_id', 'is', null);
-
-    if (!profiles?.length) return res.json({ sent: false, count: 0 });
-
-    const msg = `🆕 <b>New Task Available!</b>\n\n📋 ${taskTitle}${taskReward ? `\n🎁 Reward: <b>+${taskReward} $MINT</b>` : ''}\n\nComplete it now and earn rewards! 🚀`;
-
-    let count = 0;
-    for (const p of profiles) {
-      if (p.telegram_id) {
-        const sent = await sendTelegramMessage(botToken, p.telegram_id, msg);
-        if (sent) {
-          await logBotNotification(supabase, p.user_id, p.telegram_id, 'new_task', msg);
-          count++;
-        }
-        await new Promise(r => setTimeout(r, 50));
-      }
-    }
-
-    return res.json({ sent: true, count });
-  } catch (error) {
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-// ─── Apply DB Migration ───────────────────────────────────────────────────────
-app.post('/api/admin/apply-migration', async (req, res) => {
-  try {
-    const { accessToken } = req.body;
-    if (!accessToken) return res.status(401).json({ error: 'Unauthorized' });
-
-    const cfg = getSupabaseClient();
-    if (!cfg) return res.status(500).json({ error: 'Server not configured' });
-
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(cfg.url, cfg.key);
-
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(accessToken);
-    if (authErr || !user) return res.status(401).json({ error: 'Invalid token' });
-
-    const { data: roleData } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', user.id)
-      .eq('role', 'admin')
-      .single();
-
-    if (!roleData) return res.status(403).json({ error: 'Admin required' });
-
-    return res.json({ success: true, message: 'Migration applied via Supabase dashboard. Check the SQL migration file.' });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
@@ -489,15 +474,8 @@ app.post('/api/notify/referral-complete', async (req, res) => {
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     if (!botToken) return res.json({ sent: false });
 
-    const msg = `👥 <b>Referral Reward Unlocked!</b>\n\n${referredName || 'Your referral'} has completed all requirements!\n🏆 Level ${level || 1} commission earned.\n\nKeep inviting friends to earn more! 🚀`;
+    const msg = `👥 <b>Referral Reward!</b>\n\n${referredName || 'Your referral'} joined TonMint!\n🏆 Level ${level || 1} commission earned.\n\nKeep inviting friends! 🚀`;
     const sent = await sendTelegramMessage(botToken, referrerTelegramId, msg);
-
-    const cfg = getSupabaseClient();
-    if (cfg) {
-      const { createClient } = await import('@supabase/supabase-js');
-      const supabase = createClient(cfg.url, cfg.key);
-      await logBotNotification(supabase, referrerId, referrerTelegramId, 'referral_complete', msg);
-    }
 
     return res.json({ sent });
   } catch (error) {
@@ -505,7 +483,51 @@ app.post('/api/notify/referral-complete', async (req, res) => {
   }
 });
 
-// ─── Daily Reminder (scheduled externally or from admin) ─────────────────────
+// ─── Notify New Task (broadcast) ─────────────────────────────────────────────
+// Requires admin client (service role key) to read all users.
+// Without it, returns a helpful message instead of failing silently.
+app.post('/api/notify/new-task', async (req, res) => {
+  try {
+    const { taskTitle, taskReward } = req.body;
+    if (!taskTitle) return res.status(400).json({ error: 'Missing taskTitle' });
+
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (!botToken) return res.json({ sent: false, reason: 'Bot token not configured' });
+
+    const adminClient = await getAdminClient();
+    if (!adminClient) {
+      return res.json({
+        sent: false,
+        reason: 'Broadcast requires SUPABASE_SERVICE_ROLE_KEY. Task was created but no notifications were sent.',
+      });
+    }
+
+    const { data: profiles } = await adminClient
+      .from('profiles')
+      .select('user_id, telegram_id')
+      .not('telegram_id', 'is', null);
+
+    if (!profiles?.length) return res.json({ sent: false, count: 0 });
+
+    const msg = `🆕 <b>New Task Available!</b>\n\n📋 ${taskTitle}${taskReward ? `\n🎁 Reward: <b>+${taskReward} $MINT</b>` : ''}\n\nComplete it now and earn rewards! 🚀`;
+
+    let count = 0;
+    for (const p of profiles) {
+      if (p.telegram_id) {
+        const sent = await sendTelegramMessage(botToken, p.telegram_id, msg);
+        if (sent) count++;
+        await new Promise(r => setTimeout(r, 50));
+      }
+    }
+
+    return res.json({ sent: true, count });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── Daily Reminder (broadcast) ──────────────────────────────────────────────
+// Requires admin client for broadcast. Without service role, sends only to admin.
 app.post('/api/notify/daily-reminder', async (req, res) => {
   try {
     const { accessToken } = req.body;
@@ -514,26 +536,37 @@ app.post('/api/notify/daily-reminder', async (req, res) => {
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     if (!botToken) return res.json({ sent: false });
 
-    const cfg = getSupabaseClient();
-    if (!cfg) return res.status(500).json({ error: 'Server not configured' });
-
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(cfg.url, cfg.key);
-
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(accessToken);
+    // Verify the requesting user is an admin
+    const userClient = await getUserClient(accessToken);
+    const { data: { user }, error: authErr } = await userClient.auth.getUser();
     if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { data: roleData } = await supabase.from('user_roles').select('role').eq('user_id', user.id).eq('role', 'admin').single();
+    const { data: roleData } = await userClient.from('user_roles').select('role').eq('user_id', user.id).eq('role', 'admin').single();
     if (!roleData) return res.status(403).json({ error: 'Admin required' });
 
-    const { data: profiles } = await supabase
+    const msg = `⏰ <b>Daily Reminder!</b>\n\nDon't miss today's rewards! Log in to TonMint and:\n• Claim your Daily Drop 📅\n• Farm $MINT 🌾\n• Watch ads for energy ⚡\n\nOpen the app now! 🚀`;
+
+    const adminClient = await getAdminClient();
+
+    if (!adminClient) {
+      // No service role — send only to the admin themselves
+      const { data: adminProfile } = await userClient.from('profiles').select('telegram_id').eq('user_id', user.id).single();
+      if (adminProfile?.telegram_id) {
+        await sendTelegramMessage(botToken, adminProfile.telegram_id, msg);
+      }
+      return res.json({
+        sent: true,
+        count: 1,
+        note: 'Sent only to admin. Add SUPABASE_SERVICE_ROLE_KEY to broadcast to all users.',
+      });
+    }
+
+    const { data: profiles } = await adminClient
       .from('profiles')
       .select('user_id, telegram_id')
       .not('telegram_id', 'is', null);
 
     if (!profiles?.length) return res.json({ sent: false, count: 0 });
-
-    const msg = `⏰ <b>Daily Reminder!</b>\n\nDon't miss today's rewards! Log in to TonMint and:\n• Claim your Daily Drop 📅\n• Farm $MINT 🌾\n• Watch ads for energy ⚡\n\nOpen the app now! 🚀`;
 
     let count = 0;
     for (const p of profiles) {
@@ -552,4 +585,5 @@ app.post('/api/notify/daily-reminder', async (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`TonMint API server running on port ${PORT}`);
+  console.log(`  Service role key: ${getServiceKey() ? '✅ Available (full features)' : '⚠️  Not set (auth works, broadcasts limited)'}`);
 });
