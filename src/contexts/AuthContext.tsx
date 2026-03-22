@@ -195,9 +195,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const authenticateWithTelegram = async (initData: string) => {
     try {
-      const { data, error } = await supabase.functions.invoke('telegram-auth', {
-        body: { initData },
+      const response = await fetch('/api/telegram-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData }),
       });
+      const data = await response.json();
+      const error = response.ok ? null : new Error(data.error || 'Auth failed');
 
       if (error) throw error;
 

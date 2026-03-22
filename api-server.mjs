@@ -1,30 +1,8 @@
 import express from 'express';
 import cors from 'cors';
-import { createServer } from 'http';
-import { readFile, stat } from 'fs/promises';
-import { join, extname } from 'path';
-import { fileURLToPath } from 'url';
 import { createHmac } from 'crypto';
 
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
-const distDir = join(__dirname, 'dist');
-const PORT = parseInt(process.env.PORT || '5000');
-
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'application/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf',
-  '.webp': 'image/webp',
-};
+const PORT = parseInt(process.env.API_PORT || '5001');
 
 const ADMIN_TELEGRAM_IDS = [2139807311];
 
@@ -250,35 +228,6 @@ app.post('/api/telegram-auth', async (req, res) => {
   }
 });
 
-app.use(async (req, res) => {
-  try {
-    const urlPath = req.url.split('?')[0];
-    let filePath = join(distDir, urlPath === '/' ? 'index.html' : urlPath);
-
-    try {
-      const s = await stat(filePath);
-      if (s.isDirectory()) filePath = join(filePath, 'index.html');
-    } catch {
-      filePath = join(distDir, 'index.html');
-    }
-
-    const ext = extname(filePath).toLowerCase();
-    const contentType = MIME[ext] || 'application/octet-stream';
-    const content = await readFile(filePath);
-    const isHtml = ext === '.html' || !ext;
-
-    res.setHeader('Content-Type', contentType);
-    res.setHeader(
-      'Cache-Control',
-      isHtml ? 'no-cache, no-store, must-revalidate' : 'public, max-age=31536000, immutable'
-    );
-    res.send(content);
-  } catch (err) {
-    console.error('Server error:', err);
-    res.status(500).send('Internal server error');
-  }
-});
-
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`TonMint running on port ${PORT}`);
+  console.log(`TonMint API server running on port ${PORT}`);
 });
