@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { MAX_ENERGY, TAP_REWARD, FARMING_REWARD, FARMING_CYCLE_MS } from './constants';
+import { MAX_ENERGY, TAP_REWARD, FARMING_REWARD, FARMING_CYCLE_MS, BOOST_REFILL_AMOUNT, BOOST_REFILL_MS } from './constants';
 
 interface Profile {
   mint_balance: number;
@@ -12,6 +12,10 @@ interface Profile {
   farming_started_at: string | null;
   farming_claimed_at: string | null;
   referral_count: number;
+  boost_count?: number;
+  boost_last_refill_at?: string | null;
+  daily_drop_streak?: number;
+  daily_drop_claimed_at?: string | null;
 }
 
 interface UserState {
@@ -25,6 +29,10 @@ interface UserState {
   totalTaps: number;
   totalAdsWatched: number;
   referralCount: number;
+  boostCount: number;
+  boostLastRefillAt: number | null;
+  dailyDropStreak: number;
+  dailyDropClaimedAt: number | null;
   isInitialized: boolean;
 
   initFromProfile: (profile: Profile) => void;
@@ -36,6 +44,10 @@ interface UserState {
   refillEnergy: (amount: number) => void;
   swapMintToTon: (mintAmount: number, tonAmount: number) => void;
   swapUsdtToTon: (usdtAmount: number, tonAmount: number) => void;
+  useBoost: () => boolean;
+  addBoosts: (amount: number) => void;
+  claimDailyDrop: (streakDay: number, reward: number) => void;
+  boostsReady: () => boolean;
 }
 
 export const useUserStore = create<UserState>((set, get) => ({
@@ -49,6 +61,10 @@ export const useUserStore = create<UserState>((set, get) => ({
   totalTaps: 0,
   totalAdsWatched: 0,
   referralCount: 0,
+  boostCount: BOOST_REFILL_AMOUNT,
+  boostLastRefillAt: null,
+  dailyDropStreak: 0,
+  dailyDropClaimedAt: null,
   isInitialized: false,
 
   initFromProfile: (profile: Profile) => {
@@ -61,6 +77,14 @@ export const useUserStore = create<UserState>((set, get) => ({
       totalTaps: profile.total_taps || 0,
       totalAdsWatched: profile.total_ads_watched || 0,
       referralCount: profile.referral_count || 0,
+      boostCount: profile.boost_count ?? BOOST_REFILL_AMOUNT,
+      boostLastRefillAt: profile.boost_last_refill_at
+        ? new Date(profile.boost_last_refill_at).getTime()
+        : null,
+      dailyDropStreak: profile.daily_drop_streak ?? 0,
+      dailyDropClaimedAt: profile.daily_drop_claimed_at
+        ? new Date(profile.daily_drop_claimed_at).getTime()
+        : null,
       farmingStartedAt: profile.farming_started_at
         ? new Date(profile.farming_started_at).getTime()
         : null,
@@ -126,5 +150,49 @@ export const useUserStore = create<UserState>((set, get) => ({
       usdtBalance: state.usdtBalance - usdtAmount,
       tonBalance: state.tonBalance + tonAmount,
     }));
+  },
+
+  useBoost: () => {
+    const state = get();
+    const now = Date.now();
+
+    // Auto-refill if an hour has passed
+    let currentBoosts = state.boostCount;
+    let lastRefill = state.boostLastRefillAt;
+
+    if (lastRefill !== null && now - lastRefill >= BOOST_REFILL_MS) {
+      currentBoosts = BOOST_REFILL_AMOUNT;
+      lastRefill = now;
+    }
+
+    if (currentBoosts <= 0) return false;
+
+    set({
+      boostCount: currentBoosts - 1,
+      boostLastRefillAt: lastRefill ?? now,
+      energy: Math.min(state.energy + 10, state.maxEnergy),
+    });
+    return true;
+  },
+
+  addBoosts: (amount: number) => {
+    set((state) => ({
+      boostCount: Math.min(state.boostCount + amount, 50),
+    }));
+  },
+
+  claimDailyDrop: (streakDay: number, reward: number) => {
+    set((state) => ({
+      mintBalance: state.mintBalance + reward,
+      dailyDropStreak: streakDay,
+      dailyDropClaimedAt: Date.now(),
+    }));
+  },
+
+  boostsReady: () => {
+    const state = get();
+    const now = Date.now();
+    if (state.boostLastRefillAt === null) return false;
+    return now - state.boostLastRefillAt >= BOOST_REFILL_MS;
   },
 }));

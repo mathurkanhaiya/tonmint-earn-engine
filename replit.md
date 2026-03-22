@@ -1,54 +1,64 @@
-# TonMint
+# TonMint — Telegram Mini App
 
-A Telegram Mini App (tap-to-earn / farming game) built with React, Vite, and Supabase.
-
-## Stack
-
-- **Frontend**: React 18 + TypeScript + Vite
-- **Styling**: Tailwind CSS + shadcn/ui (Radix UI)
-- **State**: Zustand (client state) + TanStack Query (server state)
-- **Backend**: Supabase (hosted PostgreSQL + Auth + Edge Functions)
-- **Routing**: React Router DOM v6
+A tap-to-earn Telegram Mini App where users earn $MINT tokens by tapping, farming, watching ads, completing tasks, and referring friends. Tokens can be swapped or withdrawn as TON.
 
 ## Architecture
 
-This is a **pure frontend** app. All backend logic lives in Supabase:
-- **Database**: Supabase hosted PostgreSQL (tables: profiles, tasks, user_tasks, referrals, withdrawals, ad_watches, promo_codes, promo_redemptions, app_settings, user_roles)
-- **Auth**: Telegram WebApp auth via Supabase Edge Function (`telegram-auth`)
-- **Edge Functions**: Deno-based, deployed on Supabase (`supabase/functions/`)
-
-## Entry Points
-
-- `src/main.tsx` — React app entry
-- `src/App.tsx` — Root component with routing and providers
-- `src/contexts/AuthContext.tsx` — Telegram auth context (calls Supabase edge function)
-- `src/integrations/supabase/client.ts` — Supabase JS client
-
-## Key Pages
-
-- `/` — Home: tap button + farming card
-- `/ads` — Watch ads to earn MINT + promo codes
-- `/tasks` — Complete tasks for MINT rewards
-- `/referral` — Referral system
-- `/wallet` — Balances + TON withdrawal
-- `/admin` — Admin panel (admin-role users only)
-
-## Environment Variables
-
-Set in Replit secrets/env vars:
-- `VITE_SUPABASE_URL` — Supabase project URL
-- `VITE_SUPABASE_PUBLISHABLE_KEY` — Supabase anon/public key
+- **Frontend**: React + Vite + TailwindCSS + shadcn/ui (TypeScript)
+- **Backend**: Express.js API server (api-server.mjs) — handles Telegram auth verification & bot notifications
+- **Database**: Supabase (PostgreSQL) — auth, profiles, tasks, withdrawals, referrals, promo codes
+- **State**: Zustand (client-side store synced with Supabase)
+- **Bot**: Telegram Bot API — automated notifications via the backend
 
 ## Running
 
-The app runs via `npm run dev` on port 5000.
+- **Dev**: `npm run dev` — starts both Vite (port 5000) and Express API server (port 5001) in parallel
+- **Production**: `npm run build` then `node server.mjs` — serves built files + API on port 5000
 
-## Deployment
+## Key Files
 
-Build with `npm run build` → static files in `dist/`. Can be deployed as a static site.
+- `api-server.mjs` — Express backend: Telegram auth, bot notifications, daily drop claim, task notifications
+- `server.mjs` — Production server: static files + API endpoints
+- `src/contexts/AuthContext.tsx` — Telegram WebApp auth flow
+- `src/lib/store.ts` — Zustand store (balances, energy, boosts, daily drop)
+- `src/lib/supabaseSync.ts` — Debounced Supabase sync functions
+- `src/lib/appSettings.ts` — Real-time app settings via Supabase
+- `src/pages/` — All page components
+- `src/components/` — BalanceHeader, TapButton, FarmingCard, DailyDropCard, BottomNav
+- `supabase/migrations/` — Database schema migrations
 
-## Notes
+## Features
 
-- This app is **only functional inside Telegram** (it checks for `window.Telegram.WebApp`)
-- The Supabase Edge Function `telegram-auth` must be deployed to the Supabase project
-- Token icons are served from Supabase storage
+1. **Tap to Earn** — Tap button earns $MINT, uses energy
+2. **Daily Drop** — Day 1–7 streak rewards (5→10→15→20→25→35→50 $MINT)
+3. **Farming** — 3-hour cycle earns 30 $MINT
+4. **Boost System** — 10 boosts/hour cooldown, watch ads for extra boosts
+5. **Tasks** — Admin-managed tasks fetched from DB, tracked in user_tasks
+6. **Ads** — Watch ads to earn $MINT and refill energy
+7. **Promo Codes** — Admin-set exact reward amounts
+8. **Referral System** — Multi-level (L1/L2/L3), bot notifications when complete
+9. **Wallet** — Swap $MINT/USDT → TON, withdraw TON with admin approval
+10. **Admin Panel** — User activity, task management, promo codes, withdrawals, bot broadcasts
+11. **Bot Notifications** — Welcome, farming complete, boost ready, daily drop, task announcement, daily reminder
+
+## Required Secrets
+
+- `TELEGRAM_BOT_TOKEN` — From @BotFather, used server-side for auth + notifications
+- `SUPABASE_SERVICE_ROLE_KEY` — Supabase service role key for admin operations
+- `VITE_SUPABASE_URL` — Public Supabase project URL
+- `VITE_SUPABASE_PUBLISHABLE_KEY` — Public Supabase anon key
+
+## Database Tables (Supabase)
+
+- `profiles` — User data, balances, energy, boost, daily drop
+- `tasks` — Admin-managed tasks
+- `user_tasks` — Task completion tracking
+- `referrals` — Multi-level referral links
+- `promo_codes` / `promo_redemptions` — Promo code management
+- `withdrawals` — TON withdrawal requests
+- `ad_watches` — Ad viewing history
+- `app_settings` — Global settings (rates, rewards, fees)
+- `daily_drops` — Daily drop claim history
+- `boost_usage` — Boost usage log
+- `user_activity` — Full activity log for admin panel
+- `bot_notifications` — Sent notification log

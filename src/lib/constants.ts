@@ -5,11 +5,16 @@ export const TOKEN_ICONS = {
   MINT: "https://repgyetdcodkynrbxocg.supabase.co/storage/v1/object/public/images/telegram-1774025046524-43d0101e.png",
 };
 
-export const FARMING_CYCLE_MS = 3 * 60 * 60 * 1000; // 3 hours
+export const FARMING_CYCLE_MS = 3 * 60 * 60 * 1000;
 export const FARMING_REWARD = 30;
 export const MAX_ENERGY = 50;
-export const ENERGY_REFILL_TIME_MS = 10 * 60 * 1000; // 10 min per energy
+export const ENERGY_REFILL_TIME_MS = 10 * 60 * 1000;
 export const TAP_REWARD = 1;
+
+export const BOOST_REFILL_AMOUNT = 10;
+export const BOOST_REFILL_MS = 60 * 60 * 1000;
+
+export const DAILY_DROP_REWARDS = [5, 10, 15, 20, 25, 35, 50];
 
 export const AD_PROVIDERS = [
   { id: "adsgram", name: "Adsgram", reward: 15 },

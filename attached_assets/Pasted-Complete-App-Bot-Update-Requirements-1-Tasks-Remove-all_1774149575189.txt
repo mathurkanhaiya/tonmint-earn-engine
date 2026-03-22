@@ -1,0 +1,108 @@
+Complete App & Bot Update Requirements
+
+### 1. Tasks
+- Remove all old/dummy tasks.  
+- Show only tasks added by admin.
+
+---
+
+### 2. Boost System
+- Cooldown logic: 10 boosts every 1 hour.  
+  (Example: 50 boosts = 5 hours)  
+- Add CTA buttons:
+  - “Watch Ad to Boost +10%”
+  - “Watch Ad to Get 5 Boosts”
+- Send bot notification when ready:
+  - “⚡ Your boost is ready! Claim now.”
+
+---
+
+### 3. Farming System
+- Notify user via bot when farming is complete:
+  - “🌾 Farming is done! Claim your rewards now.”
+
+---
+
+### 4. Promo Code
+- Users should receive the exact amount set by admin.
+
+---
+
+### 5. Referral System
+- Referral tracking must work properly.  
+- No USDT reward until user completes all requirements.  
+- Prevent self-referrals.  
+- Referral commission can be given without requirements (if needed).  
+- Bot notification:
+  - “👥 Your referral has completed requirements! Reward unlocked.”
+  - Show level: Level 1 / Level 2 / Level 3
+
+---
+
+### 6. Withdraw Section
+- Improve UI/UX (clean and modern).  
+- Admin panel:
+  - Advanced withdraw request system  
+  - “Click to Copy” wallet address feature  
+
+---
+
+### 7. Admin Panel
+- Show complete user activity:
+  - Tasks completed  
+  - Boost usage  
+  - Farming  
+  - Referrals  
+  - Other actions  
+- App settings must update in real-time.
+
+---
+
+### 8. Telegram Bot System (TG API)
+Send automated real-time notifications:
+
+- 🎉 Welcome Message  
+  “Welcome to the app! Earn MINT and withdraw in TON.”
+
+- 🆕 New Task  
+  “New task added! Complete now and earn rewards.”
+
+- ⏰ Daily Reminder  
+  “Don’t miss today’s rewards! Log in now.”
+
+---
+
+### 9. New Feature: Daily Drop
+
+Placement:
+- Tap Earn Tab  
+- Below tabs & above Farming section  
+
+Rewards:
+- Day 1 → 5 MINT  
+- Day 2 → 10 MINT  
+- Day 3 → 15 MINT  
+- Day 4 → 20 MINT  
+- Day 5 → 25 MINT  
+- Day 6 → 35 MINT  
+- Day 7 → 50 MINT  
+
+---
+
+### 10. Daily Claim Bot Message
+
+📅 Daily Check-in — Day {X}!  
+
+🎁 Reward: +{reward} MINT  
+💎 New Balance: {balance} MINT  
+🔥 Streak: {current_day}/7  
+
+🚀 Come back tomorrow for {next_reward} MINT! 🔥  
+
+---
+
+### 11. Important
+- All systems must sync between app and bot.  
+- Notifications must be real-time and non-spammy.  
+- Ensure accurate reward calculation and tracking.  
+- Fully test before deployment.

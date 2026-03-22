@@ -1,14 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useUserStore } from "@/lib/store";
 import { useAuth } from "@/contexts/AuthContext";
 import { FARMING_CYCLE_MS, FARMING_REWARD } from "@/lib/constants";
 import { syncStartFarming, syncClaimFarming } from "@/lib/supabaseSync";
+import { supabase } from "@/integrations/supabase/client";
 import { Sprout, Check } from "lucide-react";
 
 export default function FarmingCard() {
   const { farmingStartedAt, startFarming, claimFarming, mintBalance } = useUserStore();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [now, setNow] = useState(Date.now());
+  const notifiedRef = useRef(false);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
@@ -27,14 +29,41 @@ export default function FarmingCard() {
   const minutes = Math.max(0, Math.floor((remaining % 3600000) / 60000));
   const seconds = Math.max(0, Math.floor((remaining % 60000) / 1000));
 
+  // Send bot notification when farming completes
+  useEffect(() => {
+    if (isComplete && !notifiedRef.current && user?.id && profile?.telegram_id) {
+      notifiedRef.current = true;
+      fetch('/api/notify/farming-complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, telegramId: profile.telegram_id }),
+      }).catch(() => {});
+    }
+    if (!isComplete) notifiedRef.current = false;
+  }, [isComplete, user?.id, profile?.telegram_id]);
+
   const handleStartFarming = () => {
     startFarming();
     if (user?.id) syncStartFarming(user.id);
+    if (user?.id) {
+      supabase.from('user_activity').insert({
+        user_id: user.id,
+        action_type: 'farming_start',
+        details: {},
+      }).then(() => {});
+    }
   };
 
   const handleClaimFarming = () => {
     claimFarming();
-    if (user?.id) syncClaimFarming(user.id, mintBalance + FARMING_REWARD);
+    if (user?.id) {
+      syncClaimFarming(user.id, mintBalance + FARMING_REWARD);
+      supabase.from('user_activity').insert({
+        user_id: user.id,
+        action_type: 'farming_claim',
+        details: { reward: FARMING_REWARD },
+      }).then(() => {});
+    }
   };
 
   return (

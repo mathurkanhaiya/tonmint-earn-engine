@@ -1,11 +1,11 @@
 import BalanceHeader from "@/components/BalanceHeader";
 import TapButton from "@/components/TapButton";
 import FarmingCard from "@/components/FarmingCard";
+import DailyDropCard from "@/components/DailyDropCard";
 
 export default function HomePage() {
   return (
     <div className="flex flex-col items-center px-4 pb-24 min-h-screen">
-      {/* Header */}
       <div className="w-full text-center pt-6 pb-2">
         <h1 className="text-xl font-bold tracking-tight">
           Ton<span className="text-mint">Mint</span>
@@ -18,7 +18,8 @@ export default function HomePage() {
         <TapButton />
       </div>
 
-      <div className="w-full mt-8 max-w-sm">
+      <div className="w-full mt-6 max-w-sm space-y-3">
+        <DailyDropCard />
         <FarmingCard />
       </div>
 
