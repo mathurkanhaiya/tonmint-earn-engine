@@ -43,6 +43,32 @@ export async function syncClaimFarming(userId: string, newMintBalance: number) {
     .eq('user_id', userId);
 }
 
+export async function syncMintBalance(userId: string, newMintBalance: number) {
+  await supabase
+    .from('profiles')
+    .update({ mint_balance: newMintBalance })
+    .eq('user_id', userId);
+}
+
+export async function syncSwap(
+  userId: string,
+  fromToken: 'MINT' | 'USDT',
+  fromAmount: number,
+  toTon: number,
+  newMintBalance: number,
+  newUsdtBalance: number,
+  newTonBalance: number
+) {
+  await supabase
+    .from('profiles')
+    .update({
+      mint_balance: newMintBalance,
+      usdt_balance: newUsdtBalance,
+      ton_balance: newTonBalance,
+    })
+    .eq('user_id', userId);
+}
+
 export async function syncWatchAd(
   userId: string,
   provider: string,

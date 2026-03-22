@@ -34,6 +34,8 @@ interface UserState {
   claimFarming: () => void;
   addMint: (amount: number) => void;
   refillEnergy: (amount: number) => void;
+  swapMintToTon: (mintAmount: number, tonAmount: number) => void;
+  swapUsdtToTon: (usdtAmount: number, tonAmount: number) => void;
 }
 
 export const useUserStore = create<UserState>((set, get) => ({
@@ -110,5 +112,19 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   refillEnergy: (amount: number) => {
     set((state) => ({ energy: Math.min(state.energy + amount, state.maxEnergy) }));
+  },
+
+  swapMintToTon: (mintAmount: number, tonAmount: number) => {
+    set((state) => ({
+      mintBalance: state.mintBalance - mintAmount,
+      tonBalance: state.tonBalance + tonAmount,
+    }));
+  },
+
+  swapUsdtToTon: (usdtAmount: number, tonAmount: number) => {
+    set((state) => ({
+      usdtBalance: state.usdtBalance - usdtAmount,
+      tonBalance: state.tonBalance + tonAmount,
+    }));
   },
 }));
