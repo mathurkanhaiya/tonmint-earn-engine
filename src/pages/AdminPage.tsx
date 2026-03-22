@@ -144,6 +144,23 @@ export default function AdminPanel() {
   };
 
   const [swapSaveStatus, setSwapSaveStatus] = useState<'idle' | 'saving' | 'ok' | 'err'>('idle');
+  const [migrationStatus, setMigrationStatus] = useState<'idle' | 'running' | 'ok' | 'err'>('idle');
+
+  const handleApplyMigration = async () => {
+    setMigrationStatus('running');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke('apply-migration', {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (error || data?.error) throw new Error(error?.message || data?.error);
+      setMigrationStatus('ok');
+      setTimeout(() => loadSettings(), 500);
+    } catch (e: any) {
+      console.error(e);
+      setMigrationStatus('err');
+    }
+  };
 
   const handleSaveSwapRates = async () => {
     if (!settings) return;
@@ -387,6 +404,33 @@ export default function AdminPanel() {
                 <p className="text-xs text-muted-foreground">Loading settings...</p>
               </div>
             )}
+
+            {/* One-time database setup */}
+            <div className="surface-card rounded-xl p-4">
+              <p className="font-semibold text-sm mb-1">Database Setup</p>
+              <p className="text-[11px] text-muted-foreground mb-3">
+                Run this once to add swap rate columns to the database. Safe to run multiple times.
+              </p>
+              {migrationStatus === 'ok' && (
+                <p className="text-[11px] text-mint mb-2">Migration applied! Swap rate controls are now active.</p>
+              )}
+              {migrationStatus === 'err' && (
+                <p className="text-[11px] text-destructive mb-2">Migration failed — the function may not be deployed yet.</p>
+              )}
+              <button
+                onClick={handleApplyMigration}
+                disabled={migrationStatus === 'running' || migrationStatus === 'ok'}
+                className="w-full py-2 rounded-lg bg-muted border border-border text-sm font-semibold transition-all active:scale-[0.97] disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {migrationStatus === 'running' ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Applying...</>
+                ) : migrationStatus === 'ok' ? (
+                  <><Check className="w-4 h-4 text-mint" /> Done</>
+                ) : (
+                  'Apply Database Migration'
+                )}
+              </button>
+            </div>
 
             {settings && (
               <>
