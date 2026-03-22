@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { TOKEN_ICONS } from "@/lib/constants";
 import {
   Users, Eye, Zap, DollarSign, Settings, ListChecks,
-  ArrowUpRight, Gift, Shield, LogOut, ChevronDown, ChevronUp,
+  ArrowUpRight, ArrowRightLeft, Gift, Shield, LogOut, ChevronDown, ChevronUp,
   Check, X, Loader2
 } from "lucide-react";
 
@@ -143,9 +143,42 @@ export default function AdminPanel() {
     loadPromoCodes();
   };
 
-  const handleUpdateSettings = async () => {
+  const [swapSaveStatus, setSwapSaveStatus] = useState<'idle' | 'saving' | 'ok' | 'err'>('idle');
+
+  const handleSaveSwapRates = async () => {
     if (!settings) return;
-    await supabase.from('app_settings').update(settings).eq('id', 1);
+    setSwapSaveStatus('saving');
+    const { error } = await supabase.from('app_settings').update({
+      mint_ton_rate: settings.mint_ton_rate,
+      usdt_ton_rate: settings.usdt_ton_rate,
+    }).eq('id', 1);
+    setSwapSaveStatus(error ? 'err' : 'ok');
+    setTimeout(() => setSwapSaveStatus('idle'), 3000);
+    if (!error) loadSettings();
+  };
+
+  const handleSaveRewards = async () => {
+    if (!settings) return;
+    await supabase.from('app_settings').update({
+      tap_reward_mint: settings.tap_reward_mint,
+      ad_reward_mint: settings.ad_reward_mint,
+      farming_reward_mint: settings.farming_reward_mint,
+      farming_cycle_hours: settings.farming_cycle_hours,
+      max_energy: settings.max_energy,
+    }).eq('id', 1);
+    loadSettings();
+  };
+
+  const handleSaveReferral = async () => {
+    if (!settings) return;
+    await supabase.from('app_settings').update({
+      referral_usdt: settings.referral_usdt,
+      referral_l1_percent: settings.referral_l1_percent,
+      referral_l2_percent: settings.referral_l2_percent,
+      referral_l3_percent: settings.referral_l3_percent,
+      min_withdrawal_ton: settings.min_withdrawal_ton,
+      withdrawal_fee_percent: settings.withdrawal_fee_percent,
+    }).eq('id', 1);
     loadSettings();
   };
 
@@ -346,33 +379,110 @@ export default function AdminPanel() {
         )}
 
         {/* Settings */}
-        {activeTab === 'settings' && settings && (
-          <div className="surface-card rounded-xl p-4 space-y-3">
-            <p className="font-semibold text-sm mb-2">Reward Settings</p>
-            {[
-              { key: 'ad_reward_mint', label: 'Ad Reward ($MINT)' },
-              { key: 'farming_reward_mint', label: 'Farming Reward ($MINT)' },
-              { key: 'farming_cycle_hours', label: 'Farming Cycle (hours)' },
-              { key: 'tap_reward_mint', label: 'Tap Reward ($MINT)' },
-              { key: 'max_energy', label: 'Max Energy' },
-              { key: 'referral_usdt', label: 'Referral USDT' },
-              { key: 'referral_l1_percent', label: 'L1 Commission %' },
-              { key: 'referral_l2_percent', label: 'L2 Commission %' },
-              { key: 'referral_l3_percent', label: 'L3 Commission %' },
-              { key: 'min_withdrawal_ton', label: 'Min Withdrawal (TON)' },
-              { key: 'withdrawal_fee_percent', label: 'Withdrawal Fee %' },
-            ].map(field => (
-              <div key={field.key} className="flex items-center justify-between gap-3">
-                <label className="text-xs text-muted-foreground flex-1">{field.label}</label>
-                <input type="number" value={settings[field.key] ?? ''} step="any"
-                  onChange={e => setSettings((s: any) => ({...s, [field.key]: Number(e.target.value)}))}
-                  className="w-24 px-2 py-1.5 rounded-lg bg-muted border border-border text-sm font-mono text-right focus:outline-none focus:ring-1 focus:ring-mint" />
+        {activeTab === 'settings' && (
+          <div className="space-y-4">
+            {!settings && (
+              <div className="surface-card rounded-xl p-6 text-center">
+                <Loader2 className="w-6 h-6 animate-spin text-mint mx-auto mb-2" />
+                <p className="text-xs text-muted-foreground">Loading settings...</p>
               </div>
-            ))}
-            <button onClick={handleUpdateSettings}
-              className="w-full py-2 rounded-lg bg-mint text-primary-foreground font-semibold text-sm active:scale-[0.97] transition-transform mt-2">
-              Save Settings
-            </button>
+            )}
+
+            {settings && (
+              <>
+                {/* Swap Rates */}
+                <div className="surface-card rounded-xl p-4 space-y-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <ArrowRightLeft className="w-4 h-4 text-mint" />
+                    <p className="font-semibold text-sm">Swap Rates</p>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground -mt-1">
+                    These rates apply instantly across the app — no restart needed.
+                  </p>
+                  {[
+                    { key: 'mint_ton_rate', label: '$MINT per 1 TON', hint: 'e.g. 10000' },
+                    { key: 'usdt_ton_rate', label: 'USDT per 1 TON', hint: 'e.g. 6.5' },
+                  ].map(field => (
+                    <div key={field.key} className="flex items-center justify-between gap-3">
+                      <div className="flex-1">
+                        <label className="text-xs text-muted-foreground">{field.label}</label>
+                        <p className="text-[10px] text-muted-foreground/60">{field.hint}</p>
+                      </div>
+                      <input type="number" value={settings[field.key] ?? ''} step="any"
+                        onChange={e => setSettings((s: any) => ({...s, [field.key]: Number(e.target.value)}))}
+                        className="w-28 px-2 py-1.5 rounded-lg bg-muted border border-border text-sm font-mono text-right focus:outline-none focus:ring-1 focus:ring-mint" />
+                    </div>
+                  ))}
+                  <div className="py-2 px-3 rounded-lg bg-muted text-[11px] text-muted-foreground">
+                    Preview: 1 TON = <span className="text-mint font-mono">{Number(settings.mint_ton_rate || 10000).toLocaleString()} $MINT</span>
+                    {' '}or <span className="text-mint font-mono">{Number(settings.usdt_ton_rate || 6.5)} USDT</span>
+                  </div>
+                  {swapSaveStatus === 'err' && (
+                    <div className="text-[11px] text-destructive px-1">
+                      Column missing. Run in Supabase SQL Editor:<br />
+                      <code className="font-mono bg-muted px-1 rounded">ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS mint_ton_rate NUMERIC NOT NULL DEFAULT 10000, ADD COLUMN IF NOT EXISTS usdt_ton_rate NUMERIC NOT NULL DEFAULT 6.5;</code>
+                    </div>
+                  )}
+                  {swapSaveStatus === 'ok' && (
+                    <p className="text-[11px] text-mint">Saved! Rates updated instantly across the app.</p>
+                  )}
+                  <button
+                    onClick={handleSaveSwapRates}
+                    disabled={swapSaveStatus === 'saving'}
+                    className="w-full py-2 rounded-lg bg-mint text-primary-foreground font-semibold text-sm active:scale-[0.97] transition-transform disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    {swapSaveStatus === 'saving' ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : 'Save Swap Rates'}
+                  </button>
+                </div>
+
+                {/* Reward Settings */}
+                <div className="surface-card rounded-xl p-4 space-y-3">
+                  <p className="font-semibold text-sm mb-1">Reward Settings</p>
+                  {[
+                    { key: 'tap_reward_mint', label: 'Tap Reward ($MINT)' },
+                    { key: 'ad_reward_mint', label: 'Ad Reward ($MINT)' },
+                    { key: 'farming_reward_mint', label: 'Farming Reward ($MINT)' },
+                    { key: 'farming_cycle_hours', label: 'Farming Cycle (hours)' },
+                    { key: 'max_energy', label: 'Max Energy' },
+                  ].map(field => (
+                    <div key={field.key} className="flex items-center justify-between gap-3">
+                      <label className="text-xs text-muted-foreground flex-1">{field.label}</label>
+                      <input type="number" value={settings[field.key] ?? ''} step="any"
+                        onChange={e => setSettings((s: any) => ({...s, [field.key]: Number(e.target.value)}))}
+                        className="w-24 px-2 py-1.5 rounded-lg bg-muted border border-border text-sm font-mono text-right focus:outline-none focus:ring-1 focus:ring-mint" />
+                    </div>
+                  ))}
+                  <button onClick={handleSaveRewards}
+                    className="w-full py-2 rounded-lg bg-mint text-primary-foreground font-semibold text-sm active:scale-[0.97] transition-transform">
+                    Save Rewards
+                  </button>
+                </div>
+
+                {/* Referral & Withdrawal */}
+                <div className="surface-card rounded-xl p-4 space-y-3">
+                  <p className="font-semibold text-sm mb-1">Referral & Withdrawal</p>
+                  {[
+                    { key: 'referral_usdt', label: 'Referral USDT Reward' },
+                    { key: 'referral_l1_percent', label: 'L1 Commission %' },
+                    { key: 'referral_l2_percent', label: 'L2 Commission %' },
+                    { key: 'referral_l3_percent', label: 'L3 Commission %' },
+                    { key: 'min_withdrawal_ton', label: 'Min Withdrawal (TON)' },
+                    { key: 'withdrawal_fee_percent', label: 'Withdrawal Fee %' },
+                  ].map(field => (
+                    <div key={field.key} className="flex items-center justify-between gap-3">
+                      <label className="text-xs text-muted-foreground flex-1">{field.label}</label>
+                      <input type="number" value={settings[field.key] ?? ''} step="any"
+                        onChange={e => setSettings((s: any) => ({...s, [field.key]: Number(e.target.value)}))}
+                        className="w-24 px-2 py-1.5 rounded-lg bg-muted border border-border text-sm font-mono text-right focus:outline-none focus:ring-1 focus:ring-mint" />
+                    </div>
+                  ))}
+                  <button onClick={handleSaveReferral}
+                    className="w-full py-2 rounded-lg bg-mint text-primary-foreground font-semibold text-sm active:scale-[0.97] transition-transform">
+                    Save Referral & Withdrawal
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

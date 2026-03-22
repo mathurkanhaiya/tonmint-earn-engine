@@ -1,18 +1,21 @@
 import { useState } from "react";
 import { useUserStore } from "@/lib/store";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAppSettings } from "@/lib/appSettings";
 import { syncSwap } from "@/lib/supabaseSync";
-import { TOKEN_ICONS, WITHDRAWAL_MIN_TON, WITHDRAWAL_FEE_PERCENT } from "@/lib/constants";
+import { TOKEN_ICONS } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
 import { ArrowRightLeft, ArrowUpRight, User, Shield, RefreshCw } from "lucide-react";
-
-// Exchange rates
-const MINT_PER_TON = 10000;   // 10,000 MINT = 1 TON
-const USDT_PER_TON = 6.5;     // 1 TON ≈ 6.5 USDT  →  1 USDT = 1/6.5 TON
 
 export default function WalletPage() {
   const { mintBalance, usdtBalance, tonBalance, isInitialized, swapMintToTon, swapUsdtToTon } = useUserStore();
   const { user, profile, telegramUser } = useAuth();
+  const { settings } = useAppSettings();
+
+  const MINT_PER_TON = settings.mint_ton_rate;
+  const USDT_PER_TON = settings.usdt_ton_rate;
+  const WITHDRAWAL_MIN_TON = settings.min_withdrawal_ton;
+  const WITHDRAWAL_FEE_PERCENT = settings.withdrawal_fee_percent;
 
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");

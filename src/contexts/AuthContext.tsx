@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { supabase } from '@/integrations/supabase/client';
 import { useUserStore } from '@/lib/store';
 import { loadProfileCache, saveProfileCache } from '@/lib/profileCache';
+import { useAppSettings } from '@/lib/appSettings';
 import type { Session, User } from '@supabase/supabase-js';
 
 interface TelegramUser {
@@ -79,6 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
 
   const initFromProfile = useUserStore((s) => s.initFromProfile);
+  const fetchSettings = useAppSettings((s) => s.fetch);
+  const subscribeSettings = useAppSettings((s) => s.subscribeRealtime);
 
   const tgWebApp = getTelegramWebApp();
   const isTelegramEnv = !!tgWebApp;
@@ -146,6 +149,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
 
+    // Fetch and subscribe to global app settings
+    fetchSettings();
+    const unsubSettings = subscribeSettings();
+
     supabase.auth.getSession().then(({ data: { session: existingSession } }) => {
       if (existingSession) {
         setSession(existingSession);
@@ -182,6 +189,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       subscription.unsubscribe();
       if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+      unsubSettings();
     };
   }, []);
 
